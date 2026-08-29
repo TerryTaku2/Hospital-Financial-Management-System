@@ -1,39 +1,120 @@
+<meta charset="utf-8" />
 <title>Hospital Finance — Login</title>
 <link rel="stylesheet" href="/css/style.css" />
 
 <div class="login-shell">
-  <div class="login-box">
-    <h1>Hospital Financial Management System</h1>
-    <p>Sign in to continue</p>
-    <div id="error-box"></div>
-    <form id="login-form">
-      <div class="form-row">
-        <label>Username</label>
-        <input type="text" id="username" autocomplete="username" required />
+  <div class="login-visual">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <div class="brand-mark">
+      <span class="logo-icon">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 3v18M3 12h18" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+        </svg>
+      </span>
+      <span class="brand-name">Hospital Finance</span>
+    </div>
+
+    <h1>Financial clarity for every ward, branch and ledger.</h1>
+    <p class="lead">One system for billing, claims, deposits and reporting — built for the pace of a hospital.</p>
+
+    <svg class="pulse-line" viewBox="0 0 400 60" preserveAspectRatio="none">
+      <path d="M0 30 H120 L140 8 L160 52 L180 30 H260 L280 14 L300 46 L320 30 H400" />
+    </svg>
+
+    <ul class="feature-list">
+      <li><span class="dot"></span>Multi-branch, real-time consolidated view</li>
+      <li><span class="dot"></span>Role-based access for every care team</li>
+      <li><span class="dot"></span>Audit-ready trail on every transaction</li>
+    </ul>
+  </div>
+
+  <div class="login-panel">
+    <div class="login-card">
+      <div class="card-logo">
+        <span class="logo-icon small">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 3v18M3 12h18" stroke="#fff" stroke-width="3" stroke-linecap="round" />
+          </svg>
+        </span>
+        <span class="brand-name">Hospital Finance</span>
       </div>
-      <div class="form-row">
-        <label>Password</label>
-        <input type="password" id="password" autocomplete="current-password" required />
-      </div>
-      <button class="btn" type="submit" style="width:100%">Sign in</button>
-    </form>
+
+      <h2>Welcome back</h2>
+      <p class="subtitle">Sign in with your staff credentials to continue.</p>
+
+      <div id="error-box"></div>
+
+      <form id="login-form" autocomplete="on">
+        <div class="form-row">
+          <label for="username">Username</label>
+          <div class="input-group">
+            <svg class="field-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <input type="text" id="username" autocomplete="username" required />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="password">Password</label>
+          <div class="input-group">
+            <svg class="field-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="5" y="10.5" width="14" height="9.5" rx="2" stroke="currentColor" stroke-width="1.6" />
+              <path d="M8 10.5V7.5a4 4 0 118 0v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+            <input type="password" id="password" autocomplete="current-password" required />
+            <button type="button" class="toggle-password" id="toggle-password" aria-label="Show password">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <button class="btn-login" type="submit" id="login-btn">
+          <span class="btn-label">Sign in</span>
+        </button>
+      </form>
+
+      <p class="login-footer-note">Secure staff access · Hospital Finance</p>
+    </div>
   </div>
 </div>
 
 <script src="/js/api.js"></script>
 <script src="/js/auth.js"></script>
 <script>
+  const toggleBtn = document.getElementById("toggle-password");
+  const passwordInput = document.getElementById("password");
+  toggleBtn.addEventListener("click", () => {
+    const isHidden = passwordInput.type === "password";
+    passwordInput.type = isHidden ? "text" : "password";
+    toggleBtn.classList.toggle("is-visible", isHidden);
+    toggleBtn.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
+  });
+
+  const loginBtn = document.getElementById("login-btn");
+  const loginBtnLabel = loginBtn.querySelector(".btn-label");
+
   document.getElementById("login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const errorBox = document.getElementById("error-box");
     errorBox.innerHTML = "";
     const username = document.getElementById("username").value;
     const password = document.getElementById("password").value;
+
+    loginBtn.disabled = true;
+    loginBtnLabel.textContent = "Signing in…";
     try {
       await login(username, password);
       window.location.href = "/dashboard.html";
     } catch (err) {
       errorBox.innerHTML = `<div class="error-banner">${err.detail || "Login failed"}</div>`;
+      loginBtn.disabled = false;
+      loginBtnLabel.textContent = "Sign in";
     }
   });
 
