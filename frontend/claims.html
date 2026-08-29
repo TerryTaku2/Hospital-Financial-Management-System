@@ -1,0 +1,126 @@
+<title>Medical Aid Claims — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>File a claim</h2>
+      <form id="claim-form">
+        <div class="grid grid-3">
+          <div class="form-row"><label>Invoice ID</label><input type="number" id="claim_invoice_id" required /></div>
+          <div class="form-row"><label>Medical aid provider</label><select id="claim_provider"></select></div>
+          <div><button type="button" class="btn secondary" id="load-lines-btn">Load invoice lines</button></div>
+        </div>
+        <div id="claim-lines"></div>
+        <div class="mt-16"><button class="btn" type="submit" id="submit-claim-btn" disabled>Create claim</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Claims</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Claim #</th><th>Invoice</th><th>Provider</th><th>Submitted</th><th>Approved</th><th>Status</th><th></th></tr></thead>
+          <tbody id="claims-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+  let invoiceLinesCache = [];
+
+  async function loadClaims() {
+    const claims = await api.get("/claims");
+    const canDecide = currentUser.role === "admin" || currentUser.role === "accountant";
+    const canSubmit = ["admin", "cashier", "accountant"].includes(currentUser.role);
+    document.getElementById("claims-body").innerHTML = claims
+      .map((c) => {
+        const actions = [];
+        if (c.status === "draft" && canSubmit) actions.push(`<button class="btn secondary btn-submit" data-id="${c.id}">Submit</button>`);
+        if (c.status === "submitted" && canDecide) {
+          actions.push(`<button class="btn btn-approve" data-id="${c.id}">Approve</button>`);
+          actions.push(`<button class="btn danger btn-reject" data-id="${c.id}">Reject</button>`);
+        }
+        return `<tr><td>${c.claim_number}</td><td><a href="/invoice-detail.html?id=${c.invoice_id}">#${c.invoice_id}</a></td>
+          <td>#${c.medical_aid_provider_id}</td><td>${formatMoney(c.submitted_amount, c.currency_code)}</td>
+          <td>${c.approved_amount != null ? formatMoney(c.approved_amount, c.currency_code) : "—"}</td>
+          <td>${statusBadge(c.status)}</td><td>${actions.join(" ")}</td></tr>`;
+      })
+      .join("");
+
+    document.querySelectorAll(".btn-submit").forEach((btn) =>
+      btn.addEventListener("click", () => runClaimAction(() => api.post(`/claims/${btn.dataset.id}/submit`, {})))
+    );
+    document.querySelectorAll(".btn-approve").forEach((btn) =>
+      btn.addEventListener("click", () => runClaimAction(() => api.post(`/claims/${btn.dataset.id}/decide`, { approve: true })))
+    );
+    document.querySelectorAll(".btn-reject").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const reason = window.prompt("Rejection reason:");
+        if (reason === null) return;
+        runClaimAction(() => api.post(`/claims/${btn.dataset.id}/decide`, { approve: false, rejection_reason: reason }));
+      })
+    );
+  }
+
+  async function runClaimAction(fn) {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await fn();
+      await loadClaims();
+      alerts.innerHTML = `<div class="success-banner">Done.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Request failed")}</div>`;
+    }
+  }
+
+  (async () => {
+    currentUser = await initPage("Medical Aid Claims");
+    if (!currentUser) return;
+
+    const providers = await api.get("/medical-aid-providers");
+    document.getElementById("claim_provider").innerHTML = providers.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+
+    const prefillInvoiceId = new URLSearchParams(window.location.search).get("invoice_id");
+    if (prefillInvoiceId) document.getElementById("claim_invoice_id").value = prefillInvoiceId;
+
+    await loadClaims();
+
+    document.getElementById("load-lines-btn").addEventListener("click", async () => {
+      const invoiceId = document.getElementById("claim_invoice_id").value;
+      const invoice = await api.get(`/invoices/${invoiceId}`);
+      invoiceLinesCache = invoice.lines;
+      document.getElementById("claim-lines").innerHTML = invoice.lines
+        .map(
+          (l) => `<label style="display:block"><input type="checkbox" class="claim-line-check" value="${l.id}" checked />
+            ${escapeHtml(l.description)} — ${formatMoney(l.amount, invoice.currency_code)}</label>`
+        )
+        .join("");
+      document.getElementById("submit-claim-btn").disabled = invoice.lines.length === 0;
+    });
+
+    document.getElementById("claim-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const lineIds = Array.from(document.querySelectorAll(".claim-line-check:checked")).map((cb) => Number(cb.value));
+      await runClaimAction(() =>
+        api.post("/claims", {
+          invoice_id: Number(document.getElementById("claim_invoice_id").value),
+          medical_aid_provider_id: Number(document.getElementById("claim_provider").value),
+          invoice_line_ids: lineIds,
+        })
+      );
+    });
+  })();
+</script>

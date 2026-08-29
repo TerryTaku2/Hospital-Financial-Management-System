@@ -1,0 +1,78 @@
+<title>Chart of Accounts — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card" id="create-card">
+      <h2>New account</h2>
+      <form id="account-form" class="grid grid-3">
+        <div class="form-row"><label>Code</label><input id="acc_code" required /></div>
+        <div class="form-row"><label>Name</label><input id="acc_name" required /></div>
+        <div class="form-row"><label>Type</label>
+          <select id="acc_type">
+            <option value="asset">Asset</option>
+            <option value="liability">Liability</option>
+            <option value="equity">Equity</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+          </select>
+        </div>
+        <div><button class="btn" type="submit">Create account</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Chart of Accounts</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th>Type</th><th></th></tr></thead>
+          <tbody id="accounts-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  async function loadAccounts() {
+    const accounts = await api.get("/accounts");
+    document.getElementById("accounts-body").innerHTML = accounts
+      .map((a) => `<tr><td>${a.code}</td><td>${escapeHtml(a.name)}</td><td>${a.type}</td><td><a href="/accounts.html?ledger=${a.id}">View ledger</a></td></tr>`)
+      .join("");
+  }
+
+  (async () => {
+    const user = await initPage("Chart of Accounts");
+    if (!user) return;
+    if (!["admin", "accountant"].includes(user.role)) {
+      document.getElementById("create-card").style.display = "none";
+    }
+    await loadAccounts();
+
+    document.getElementById("account-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post("/accounts", {
+          code: document.getElementById("acc_code").value,
+          name: document.getElementById("acc_name").value,
+          type: document.getElementById("acc_type").value,
+        });
+        e.target.reset();
+        await loadAccounts();
+        alerts.innerHTML = `<div class="success-banner">Account created.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create account")}</div>`;
+      }
+    });
+  })();
+</script>

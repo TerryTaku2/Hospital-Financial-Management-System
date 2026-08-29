@@ -1,13 +1,46 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hospital ERP</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>
+<title>Hospital Finance — Login</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="login-shell">
+  <div class="login-box">
+    <h1>Hospital Financial Management System</h1>
+    <p>Sign in to continue</p>
+    <div id="error-box"></div>
+    <form id="login-form">
+      <div class="form-row">
+        <label>Username</label>
+        <input type="text" id="username" autocomplete="username" required />
+      </div>
+      <div class="form-row">
+        <label>Password</label>
+        <input type="password" id="password" autocomplete="current-password" required />
+      </div>
+      <button class="btn" type="submit" style="width:100%">Sign in</button>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script>
+  document.getElementById("login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorBox = document.getElementById("error-box");
+    errorBox.innerHTML = "";
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+    try {
+      await login(username, password);
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      errorBox.innerHTML = `<div class="error-banner">${err.detail || "Login failed"}</div>`;
+    }
+  });
+
+  (async () => {
+    try {
+      const user = await api.get("/auth/me");
+      if (user) window.location.href = "/dashboard.html";
+    } catch (_) {}
+  })();
+</script>

@@ -1,0 +1,201 @@
+<title>Billing — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>New invoice</h2>
+      <form id="invoice-form">
+        <div class="grid grid-3">
+          <div class="form-row" style="position:relative">
+            <label>Patient</label>
+            <input type="text" id="patient_search" placeholder="Type patient name…" autocomplete="off" required />
+            <input type="hidden" id="patient_id" />
+            <div id="patient-suggestions" class="card" style="display:none; position:absolute; z-index:10; width:100%; max-height:220px; overflow-y:auto; padding:4px; margin-top:2px;"></div>
+          </div>
+          <div class="form-row"><label>Currency</label>
+            <select id="currency_code"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+          </div>
+          <div class="form-row"><label>Payer type</label>
+            <select id="payer_type"><option value="patient">Patient (self-pay)</option><option value="medical_aid">Medical Aid</option></select>
+          </div>
+          <div class="form-row" id="provider-row" style="display:none">
+            <label>Medical aid provider</label>
+            <select id="medical_aid_provider_id"></select>
+          </div>
+        </div>
+
+        <h2>Line items</h2>
+        <div id="lines-container"></div>
+        <button type="button" class="btn secondary" id="add-line">+ Add line</button>
+
+        <div class="mt-16">
+          <button class="btn" type="submit">Create draft invoice</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Recent invoices</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Invoice #</th><th>Patient</th><th>Currency</th><th>Total</th><th>Status</th><th></th></tr></thead>
+          <tbody id="invoices-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let patientSearchTimer = null;
+
+  function setupPatientSearch() {
+    const searchInput = document.getElementById("patient_search");
+    const hiddenId = document.getElementById("patient_id");
+    const suggestions = document.getElementById("patient-suggestions");
+
+    searchInput.addEventListener("input", () => {
+      hiddenId.value = "";
+      const q = searchInput.value.trim();
+      clearTimeout(patientSearchTimer);
+      if (!q) {
+        suggestions.style.display = "none";
+        return;
+      }
+      patientSearchTimer = setTimeout(async () => {
+        const matches = await api.get(`/patients?q=${encodeURIComponent(q)}`);
+        if (matches.length === 0) {
+          suggestions.innerHTML = `<div class="text-muted" style="padding:6px">No matching patients. <a href="/patients.html">Register one?</a></div>`;
+        } else {
+          suggestions.innerHTML = matches
+            .map(
+              (p) => `<div class="patient-suggestion" data-id="${p.id}" data-name="${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)}"
+                style="padding:8px; cursor:pointer; border-bottom:1px solid var(--color-border)">
+                ${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)} ${p.national_id ? "· " + escapeHtml(p.national_id) : ""}
+              </div>`
+            )
+            .join("");
+        }
+        suggestions.style.display = "block";
+      }, 250);
+    });
+
+    suggestions.addEventListener("click", (e) => {
+      const row = e.target.closest(".patient-suggestion");
+      if (!row) return;
+      hiddenId.value = row.dataset.id;
+      searchInput.value = row.dataset.name;
+      suggestions.style.display = "none";
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#patient_search") && !e.target.closest("#patient-suggestions")) {
+        suggestions.style.display = "none";
+      }
+    });
+  }
+
+  function addLineRow() {
+    const container = document.getElementById("lines-container");
+    const row = document.createElement("div");
+    row.className = "grid grid-3 line-row";
+    row.innerHTML = `
+      <div class="form-row"><label>Description (what the charge is for)</label><input type="text" class="line-description" placeholder="e.g. Consultation" required /></div>
+      <div class="form-row"><label class="line-price-label">Amount</label><input type="number" class="line-price" step="0.01" min="0" required /></div>
+      <div class="form-row line-qty-row" style="display:none"><label>Quantity</label><input type="number" class="line-qty" value="1" min="0.01" step="0.01" /></div>
+      <div class="form-row" style="align-self:end">
+        <label style="display:flex; align-items:center; gap:6px; font-weight:normal">
+          <input type="checkbox" class="line-has-qty" style="width:auto" /> Bill by quantity (e.g. tablets, days)
+        </label>
+      </div>
+      <div><button type="button" class="btn secondary remove-line">Remove</button></div>
+    `;
+    const qtyCheckbox = row.querySelector(".line-has-qty");
+    const qtyRow = row.querySelector(".line-qty-row");
+    const priceLabel = row.querySelector(".line-price-label");
+    qtyCheckbox.addEventListener("change", () => {
+      qtyRow.style.display = qtyCheckbox.checked ? "block" : "none";
+      priceLabel.textContent = qtyCheckbox.checked ? "Unit price" : "Amount";
+      if (!qtyCheckbox.checked) row.querySelector(".line-qty").value = "1";
+    });
+    row.querySelector(".remove-line").addEventListener("click", () => row.remove());
+    container.appendChild(row);
+  }
+
+  async function loadInvoices() {
+    const invoices = await api.get("/invoices");
+    document.getElementById("invoices-body").innerHTML = invoices
+      .map(
+        (i) => `<tr>
+          <td><a href="/invoice-detail.html?id=${i.id}">${i.invoice_number}</a></td>
+          <td><a href="/patient-detail.html?id=${i.patient_id}">#${i.patient_id}</a></td>
+          <td>${i.currency_code}</td>
+          <td>${formatMoney(i.total, "")}</td>
+          <td>${statusBadge(i.status)}</td>
+          <td><a href="/invoice-detail.html?id=${i.id}">Open</a></td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    const user = await initPage("Billing");
+    if (!user) return;
+
+    const providers = await api.get("/medical-aid-providers");
+    document.getElementById("medical_aid_provider_id").innerHTML = providers
+      .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
+      .join("");
+
+    document.getElementById("payer_type").addEventListener("change", (e) => {
+      document.getElementById("provider-row").style.display = e.target.value === "medical_aid" ? "block" : "none";
+    });
+
+    setupPatientSearch();
+    addLineRow();
+    document.getElementById("add-line").addEventListener("click", addLineRow);
+    await loadInvoices();
+
+    document.getElementById("invoice-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+
+      const patientId = document.getElementById("patient_id").value;
+      if (!patientId) {
+        alerts.innerHTML = `<div class="error-banner">Select a patient from the suggestions list first.</div>`;
+        return;
+      }
+
+      const lines = Array.from(document.querySelectorAll(".line-row")).map((row) => ({
+        description: row.querySelector(".line-description").value,
+        unit_price: Number(row.querySelector(".line-price").value),
+        quantity: Number(row.querySelector(".line-qty").value),
+      }));
+      const payerType = document.getElementById("payer_type").value;
+      try {
+        const invoice = await api.post("/invoices", {
+          branch_id: user.branch_id,
+          patient_id: Number(patientId),
+          currency_code: document.getElementById("currency_code").value,
+          payer_type: payerType,
+          medical_aid_provider_id: payerType === "medical_aid" ? Number(document.getElementById("medical_aid_provider_id").value) : null,
+          lines,
+        });
+        alerts.innerHTML = `<div class="success-banner">Draft invoice ${invoice.invoice_number} created. <a href="/invoice-detail.html?id=${invoice.id}">Open it</a> to finalize.</div>`;
+        await loadInvoices();
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create invoice")}</div>`;
+      }
+    });
+  })();
+</script>

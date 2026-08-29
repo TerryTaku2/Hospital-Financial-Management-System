@@ -1,0 +1,301 @@
+<title>Invoice — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2 id="invoice-title">Loading…</h2>
+        <div id="invoice-status"></div>
+      </div>
+      <p class="text-muted" id="invoice-meta"></p>
+      <div id="invoice-actions"></div>
+    </div>
+
+    <div class="card">
+      <h2>Line items</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead>
+          <tbody id="lines-body"></tbody>
+        </table>
+      </div>
+      <p class="text-right"><strong>Total: <span id="invoice-total"></span></strong></p>
+    </div>
+
+    <div class="card" id="payment-card">
+      <h2>Record payment</h2>
+      <form id="payment-form" class="grid grid-3">
+        <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="pay_amount" required /></div>
+        <div class="form-row"><label>Method</label>
+          <select id="pay_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
+        </div>
+        <div><button class="btn" type="submit">Record payment</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Payments</h2>
+      <div class="table-scroll">
+        <table><thead><tr><th>Method</th><th>Amount</th><th></th></tr></thead><tbody id="payments-body"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="print-doc" id="print-invoice">
+  <div class="print-header">
+    <div>
+      <h1 id="print-branch-name"></h1>
+      <div id="print-branch-address"></div>
+    </div>
+    <div style="text-align:right">
+      <h2 style="margin:0">INVOICE</h2>
+      <div id="print-invoice-number"></div>
+      <div id="print-invoice-date"></div>
+      <div id="print-invoice-status"></div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <strong>Bill to:</strong>
+    <div id="print-patient-name"></div>
+    <div id="print-patient-meta"></div>
+    <div id="print-payer-info"></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead>
+    <tbody id="print-lines-body"></tbody>
+  </table>
+
+  <div class="print-totals">
+    <div><span>Subtotal</span><span id="print-subtotal"></span></div>
+    <div><span>Amount paid</span><span id="print-paid"></span></div>
+    <div class="grand-total"><span>Balance due</span><span id="print-balance"></span></div>
+  </div>
+
+  <div class="print-footer">Printed on <span id="print-timestamp"></span> — Hospital Financial Management System</div>
+</div>
+
+<div class="print-doc" id="print-receipt">
+  <div class="print-header">
+    <div>
+      <h1 id="r-branch-name"></h1>
+      <div id="r-branch-address"></div>
+    </div>
+    <div style="text-align:right">
+      <h2 style="margin:0">RECEIPT</h2>
+      <div id="r-receipt-ref"></div>
+      <div id="r-receipt-date"></div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <strong>Received from:</strong>
+    <div id="r-patient-name"></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Invoice #</th><th>Method</th><th>Amount received</th></tr></thead>
+    <tbody id="r-line"></tbody>
+  </table>
+
+  <div class="print-totals">
+    <div><span>Invoice total</span><span id="r-invoice-total"></span></div>
+    <div><span>Total paid to date</span><span id="r-total-paid"></span></div>
+    <div class="grand-total"><span>Balance remaining</span><span id="r-balance"></span></div>
+  </div>
+
+  <div class="print-footer">Printed on <span id="r-timestamp"></span> — Hospital Financial Management System</div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  const invoiceId = new URLSearchParams(window.location.search).get("id");
+  let currentUser = null;
+  let invoice = null;
+
+  function printDoc(id) {
+    document.querySelectorAll(".print-doc").forEach((el) => el.classList.remove("print-only"));
+    document.getElementById(id).classList.add("print-only");
+    window.print();
+  }
+
+  function renderActions() {
+    const canBill = ["admin", "cashier", "accountant"].includes(currentUser.role);
+    const canVoid = ["admin", "accountant"].includes(currentUser.role);
+    const actions = [];
+    if (invoice.status === "draft" && canBill) {
+      actions.push(`<button class="btn" id="finalize-btn">Finalize invoice</button>`);
+    }
+    if ((invoice.status === "draft" || invoice.status === "finalized") && canVoid) {
+      actions.push(`<button class="btn danger" id="void-btn">Void invoice</button>`);
+    }
+    if (invoice.payer_type === "medical_aid" && invoice.status !== "draft" && canBill) {
+      actions.push(`<a class="btn secondary" href="/claims.html?invoice_id=${invoice.id}">File medical aid claim</a>`);
+    }
+    actions.push(`<button type="button" class="btn secondary" id="print-btn">Print invoice</button>`);
+    document.getElementById("invoice-actions").innerHTML = actions.join(" ");
+
+    const finalizeBtn = document.getElementById("finalize-btn");
+    if (finalizeBtn) finalizeBtn.addEventListener("click", finalizeInvoice);
+    const voidBtn = document.getElementById("void-btn");
+    if (voidBtn) voidBtn.addEventListener("click", voidInvoice);
+    document.getElementById("print-btn").addEventListener("click", () => printDoc("print-invoice"));
+
+    document.getElementById("payment-card").style.display =
+      ["finalized", "partially_paid"].includes(invoice.status) && canBill ? "block" : "none";
+  }
+
+  async function load() {
+    invoice = await api.get(`/invoices/${invoiceId}`);
+    document.getElementById("invoice-title").textContent = invoice.invoice_number;
+    document.getElementById("invoice-status").innerHTML = statusBadge(invoice.status);
+    document.getElementById("invoice-meta").textContent =
+      `Patient #${invoice.patient_id} · ${invoice.payer_type === "medical_aid" ? "Medical aid billed" : "Self-pay"} · ${invoice.currency_code}`;
+    document.getElementById("lines-body").innerHTML = invoice.lines
+      .map((l) => `<tr><td>${escapeHtml(l.description)}</td><td>${l.quantity}</td><td>${formatMoney(l.unit_price, "")}</td><td>${formatMoney(l.amount, "")}</td></tr>`)
+      .join("");
+    document.getElementById("invoice-total").textContent =
+      `${formatMoney(invoice.total, invoice.currency_code)} (paid ${formatMoney(invoice.amount_paid, invoice.currency_code)})`;
+    renderActions();
+
+    const payments = await api.get(`/payments?invoice_id=${invoiceId}`);
+    document.getElementById("payments-body").innerHTML = payments
+      .map(
+        (p) => `<tr><td>${p.method}</td><td>${formatMoney(p.amount, p.currency_code)}</td>
+          <td><button type="button" class="btn secondary print-receipt-btn" data-id="${p.id}">Print receipt</button></td></tr>`
+      )
+      .join("");
+    document.querySelectorAll(".print-receipt-btn").forEach((btn) =>
+      btn.addEventListener("click", async () => {
+        await populateReceipt(payments.find((p) => p.id === Number(btn.dataset.id)));
+        printDoc("print-receipt");
+      })
+    );
+
+    await populatePrintView();
+  }
+
+  async function populateReceipt(payment) {
+    const [patient, branches] = await Promise.all([
+      api.get(`/patients/${invoice.patient_id}`),
+      api.get("/branches"),
+    ]);
+    const branch = branches.find((b) => b.id === invoice.branch_id);
+
+    document.getElementById("r-branch-name").textContent = branch ? branch.name : "Hospital";
+    document.getElementById("r-branch-address").textContent = branch && branch.address ? branch.address : "";
+    document.getElementById("r-receipt-ref").textContent = `Receipt #${payment.id}`;
+    document.getElementById("r-receipt-date").textContent = new Date().toLocaleString();
+    document.getElementById("r-patient-name").textContent = `${patient.first_name} ${patient.last_name}`;
+    document.getElementById("r-line").innerHTML =
+      `<tr><td>${invoice.invoice_number}</td><td>${payment.method}</td><td>${formatMoney(payment.amount, payment.currency_code)}</td></tr>`;
+    document.getElementById("r-invoice-total").textContent = formatMoney(invoice.total, invoice.currency_code);
+    document.getElementById("r-total-paid").textContent = formatMoney(invoice.amount_paid, invoice.currency_code);
+    const balance = Number(invoice.total) - Number(invoice.amount_paid);
+    document.getElementById("r-balance").textContent = formatMoney(balance, invoice.currency_code);
+    document.getElementById("r-timestamp").textContent = new Date().toLocaleString();
+  }
+
+  async function populatePrintView() {
+    const [patient, branches] = await Promise.all([
+      api.get(`/patients/${invoice.patient_id}`),
+      api.get("/branches"),
+    ]);
+    const branch = branches.find((b) => b.id === invoice.branch_id);
+
+    document.getElementById("print-branch-name").textContent = branch ? branch.name : "Hospital";
+    document.getElementById("print-branch-address").textContent = branch && branch.address ? branch.address : "";
+    document.getElementById("print-invoice-number").textContent = invoice.invoice_number;
+    document.getElementById("print-invoice-date").textContent = new Date(invoice.created_at).toLocaleDateString();
+    document.getElementById("print-invoice-status").innerHTML = statusBadge(invoice.status);
+
+    document.getElementById("print-patient-name").textContent = `${patient.first_name} ${patient.last_name}`;
+    document.getElementById("print-patient-meta").textContent = [
+      patient.national_id ? `National ID: ${patient.national_id}` : null,
+      patient.phone ? `Phone: ${patient.phone}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    document.getElementById("print-payer-info").textContent =
+      invoice.payer_type === "medical_aid" ? "Billed to medical aid" : "Self-pay";
+
+    document.getElementById("print-lines-body").innerHTML = invoice.lines
+      .map(
+        (l) => `<tr><td>${escapeHtml(l.description)}</td><td>${l.quantity}</td><td>${formatMoney(l.unit_price, "")}</td><td>${formatMoney(l.amount, "")}</td></tr>`
+      )
+      .join("");
+
+    const balance = Number(invoice.total) - Number(invoice.amount_paid);
+    document.getElementById("print-subtotal").textContent = formatMoney(invoice.total, invoice.currency_code);
+    document.getElementById("print-paid").textContent = formatMoney(invoice.amount_paid, invoice.currency_code);
+    document.getElementById("print-balance").textContent = formatMoney(balance, invoice.currency_code);
+    document.getElementById("print-timestamp").textContent = new Date().toLocaleString();
+  }
+
+  async function finalizeInvoice() {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/invoices/${invoiceId}/finalize`, {});
+      await load();
+      alerts.innerHTML = `<div class="success-banner">Invoice finalized and posted to the general ledger.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not finalize invoice")}</div>`;
+    }
+  }
+
+  async function voidInvoice() {
+    const reason = window.prompt("Reason for voiding this invoice:");
+    if (!reason) return;
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/invoices/${invoiceId}/void`, { reason });
+      await load();
+      alerts.innerHTML = `<div class="success-banner">Invoice voided.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not void invoice")}</div>`;
+    }
+  }
+
+  (async () => {
+    currentUser = await initPage("Invoice Detail");
+    if (!currentUser) return;
+    await load();
+
+    document.getElementById("payment-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post(
+          "/payments",
+          {
+            branch_id: currentUser.branch_id,
+            invoice_id: Number(invoiceId),
+            payer_type: "patient",
+            method: document.getElementById("pay_method").value,
+            currency_code: invoice.currency_code,
+            amount: Number(document.getElementById("pay_amount").value),
+          },
+          { "Idempotency-Key": newIdempotencyKey() }
+        );
+        e.target.reset();
+        await load();
+        alerts.innerHTML = `<div class="success-banner">Payment recorded.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not record payment")}</div>`;
+      }
+    });
+  })();
+</script>

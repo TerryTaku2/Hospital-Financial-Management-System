@@ -1,0 +1,81 @@
+<title>Branches — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card" id="create-branch-card">
+      <h2>New branch</h2>
+      <form id="branch-form" class="grid grid-3">
+        <div class="form-row"><label>Code</label><input id="b_code" required /></div>
+        <div class="form-row"><label>Name</label><input id="b_name" required /></div>
+        <div class="form-row"><label>Base currency</label>
+          <select id="b_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+        </div>
+        <div class="form-row" style="grid-column: span 3"><label>Address</label><input id="b_address" /></div>
+        <div><button class="btn" type="submit">Create branch</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Branches</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th>Base currency</th><th>Active</th><th></th></tr></thead>
+          <tbody id="branches-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  async function loadBranches() {
+    const branches = await api.get("/branches");
+    document.getElementById("branches-body").innerHTML = branches
+      .map(
+        (b) => `<tr><td>${escapeHtml(b.code)}</td><td>${escapeHtml(b.name)}</td><td>${b.base_currency_code}</td>
+          <td>${b.is_active ? "Yes" : "No"}</td><td>${b.is_main ? '<span class="badge finalized">Main branch</span>' : ""}</td></tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    const user = await initPage("Branches");
+    if (!user) return;
+    if (user.role !== "admin") {
+      document.body.innerHTML = `<div class="error-banner" style="margin:24px">Administrator access required.</div>`;
+      return;
+    }
+    if (!user.can_view_all_branches) {
+      document.getElementById("create-branch-card").style.display = "none";
+    }
+    await loadBranches();
+
+    document.getElementById("branch-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post("/branches", {
+          code: document.getElementById("b_code").value,
+          name: document.getElementById("b_name").value,
+          base_currency_code: document.getElementById("b_currency").value,
+          address: document.getElementById("b_address").value || null,
+        });
+        e.target.reset();
+        await loadBranches();
+        alerts.innerHTML = `<div class="success-banner">Branch created.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create branch")}</div>`;
+      }
+    });
+  })();
+</script>

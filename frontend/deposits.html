@@ -1,0 +1,132 @@
+<title>Deposits — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>Take deposit</h2>
+      <form id="deposit-form" class="grid grid-3">
+        <div class="form-row"><label>Patient ID</label><input type="number" id="dep_patient_id" required /></div>
+        <div class="form-row"><label>Currency</label>
+          <select id="dep_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+        </div>
+        <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="dep_amount" required /></div>
+        <div class="form-row"><label>Method</label>
+          <select id="dep_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
+        </div>
+        <div><button class="btn" type="submit">Take deposit</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Apply deposit to invoice</h2>
+      <form id="apply-form" class="grid grid-3">
+        <div class="form-row"><label>Deposit ID</label><input type="number" id="apply_deposit_id" required /></div>
+        <div class="form-row"><label>Invoice ID</label><input type="number" id="apply_invoice_id" required /></div>
+        <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="apply_amount" required /></div>
+        <div><button class="btn secondary" type="submit">Apply</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Refund deposit</h2>
+      <form id="refund-form" class="grid grid-3">
+        <div class="form-row"><label>Deposit ID</label><input type="number" id="refund_deposit_id" required /></div>
+        <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="refund_amount" required /></div>
+        <div class="form-row"><label>Reason</label><input id="refund_reason" required /></div>
+        <div><button class="btn secondary" type="submit">Refund</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Deposits</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ID</th><th>Patient</th><th>Currency</th><th>Amount</th><th>Applied</th><th>Refunded</th><th>Status</th></tr></thead>
+          <tbody id="deposits-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+
+  async function loadDeposits() {
+    const deposits = await api.get("/deposits");
+    document.getElementById("deposits-body").innerHTML = deposits
+      .map(
+        (d) => `<tr><td>${d.id}</td><td><a href="/patient-detail.html?id=${d.patient_id}">#${d.patient_id}</a></td>
+          <td>${d.currency_code}</td><td>${formatMoney(d.amount, "")}</td><td>${formatMoney(d.amount_applied, "")}</td>
+          <td>${formatMoney(d.amount_refunded, "")}</td><td>${statusBadge(d.status)}</td></tr>`
+      )
+      .join("");
+  }
+
+  function bindForm(formId, handler) {
+    document.getElementById(formId).addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await handler();
+        e.target.reset();
+        await loadDeposits();
+        alerts.innerHTML = `<div class="success-banner">Done.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Request failed")}</div>`;
+      }
+    });
+  }
+
+  (async () => {
+    currentUser = await initPage("Deposits");
+    if (!currentUser) return;
+    await loadDeposits();
+
+    bindForm("deposit-form", () =>
+      api.post(
+        "/deposits",
+        {
+          branch_id: currentUser.branch_id,
+          patient_id: Number(document.getElementById("dep_patient_id").value),
+          currency_code: document.getElementById("dep_currency").value,
+          amount: Number(document.getElementById("dep_amount").value),
+          method: document.getElementById("dep_method").value,
+        },
+        { "Idempotency-Key": newIdempotencyKey() }
+      )
+    );
+
+    bindForm("apply-form", () =>
+      api.post(`/deposits/${document.getElementById("apply_deposit_id").value}/apply`, {
+        invoice_id: Number(document.getElementById("apply_invoice_id").value),
+        amount: Number(document.getElementById("apply_amount").value),
+      })
+    );
+
+    bindForm("refund-form", async () => {
+      const depositId = document.getElementById("refund_deposit_id").value;
+      const deposit = await api.get(`/deposits/${depositId}`);
+      return api.post(
+        `/deposits/${depositId}/refund`,
+        {
+          branch_id: currentUser.branch_id,
+          currency_code: deposit.currency_code,
+          amount: Number(document.getElementById("refund_amount").value),
+          reason: document.getElementById("refund_reason").value,
+        },
+        { "Idempotency-Key": newIdempotencyKey() }
+      );
+    });
+  })();
+</script>

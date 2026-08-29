@@ -1,0 +1,65 @@
+<title>Income Statement — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Income Statement</h2>
+        <div id="branch-filter-row" style="display:none">
+          <label class="text-muted" style="font-size:12px">Branch</label>
+          <select id="branch-filter" style="width:auto; display:inline-block"><option value="">All branches</option></select>
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div>
+          <h3>Income</h3>
+          <table><tbody id="income-body"></tbody></table>
+        </div>
+        <div>
+          <h3>Expenses</h3>
+          <table><tbody id="expense-body"></tbody></table>
+        </div>
+      </div>
+      <p class="text-right" id="net-income"></p>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  async function loadIncomeStatement(branchId) {
+    const qs = branchId ? `?branch_id=${branchId}` : "";
+    const inc = await api.get(`/reports/income-statement${qs}`);
+    document.getElementById("income-body").innerHTML = inc.income_lines
+      .map((l) => `<tr><td>${escapeHtml(l.account_name)}</td><td class="text-right">${formatMoney(l.amount, "")}</td></tr>`)
+      .join("");
+    document.getElementById("expense-body").innerHTML = inc.expense_lines
+      .map((l) => `<tr><td>${escapeHtml(l.account_name)}</td><td class="text-right">${formatMoney(l.amount, "")}</td></tr>`)
+      .join("");
+    document.getElementById("net-income").textContent = `Net income: ${formatMoney(inc.net_income, "")}`;
+  }
+
+  (async () => {
+    const user = await initPage("Income Statement");
+    if (!user) return;
+
+    if (user.can_view_all_branches) {
+      const branches = await api.get("/branches");
+      document.getElementById("branch-filter-row").style.display = "block";
+      document.getElementById("branch-filter").insertAdjacentHTML(
+        "beforeend",
+        branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join("")
+      );
+      document.getElementById("branch-filter").addEventListener("change", (e) => loadIncomeStatement(e.target.value));
+    }
+
+    await loadIncomeStatement();
+  })();
+</script>

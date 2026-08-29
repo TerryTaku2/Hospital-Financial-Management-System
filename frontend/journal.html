@@ -1,0 +1,112 @@
+<title>Journal Entries — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card" id="create-card">
+      <h2>New manual journal entry</h2>
+      <p class="text-muted">Each entry must balance: total debits must equal total credits.</p>
+      <form id="journal-form">
+        <div class="grid grid-3">
+          <div class="form-row"><label>Branch ID</label><input type="number" id="je_branch" required /></div>
+          <div class="form-row"><label>Date</label><input type="date" id="je_date" required /></div>
+          <div class="form-row"><label>Currency</label>
+            <select id="je_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+          </div>
+        </div>
+        <div class="form-row"><label>Memo</label><input id="je_memo" required /></div>
+        <div id="je-lines"></div>
+        <button type="button" class="btn secondary" id="add-je-line">+ Add line</button>
+        <div class="mt-16"><button class="btn" type="submit">Post entry</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Recent entries</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Memo</th><th>Source</th><th>Lines</th></tr></thead>
+          <tbody id="entries-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  function addJeLine() {
+    const container = document.getElementById("je-lines");
+    const row = document.createElement("div");
+    row.className = "grid grid-3 je-row";
+    row.innerHTML = `
+      <div class="form-row"><label>Account ID</label><input type="number" class="je-account" required /></div>
+      <div class="form-row"><label>Debit</label><input type="number" step="0.01" class="je-debit" value="0" /></div>
+      <div class="form-row"><label>Credit</label><input type="number" step="0.01" class="je-credit" value="0" /></div>
+    `;
+    container.appendChild(row);
+  }
+
+  async function loadEntries() {
+    const entries = await api.get("/journal-entries");
+    document.getElementById("entries-body").innerHTML = entries
+      .slice(0, 50)
+      .map(
+        (je) => `<tr><td>${je.entry_date}</td><td>${escapeHtml(je.memo)}</td><td>${je.source_type}</td>
+          <td>${je.lines.map((l) => `#${l.account_id}: ${l.debit > 0 ? "Dr " + l.debit : "Cr " + l.credit}`).join("; ")}</td></tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    const user = await initPage("Journal Entries");
+    if (!user) return;
+    if (!["admin", "accountant"].includes(user.role)) {
+      document.getElementById("create-card").style.display = "none";
+    }
+    document.getElementById("je_branch").value = user.branch_id;
+    if (!user.can_view_all_branches) {
+      document.getElementById("je_branch").readOnly = true;
+    }
+    document.getElementById("je_date").value = new Date().toISOString().slice(0, 10);
+    addJeLine();
+    addJeLine();
+    document.getElementById("add-je-line").addEventListener("click", addJeLine);
+    await loadEntries();
+
+    document.getElementById("journal-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      const lines = Array.from(document.querySelectorAll(".je-row")).map((row) => ({
+        account_id: Number(row.querySelector(".je-account").value),
+        debit: Number(row.querySelector(".je-debit").value) || 0,
+        credit: Number(row.querySelector(".je-credit").value) || 0,
+      }));
+      try {
+        await api.post("/journal-entries", {
+          branch_id: Number(document.getElementById("je_branch").value),
+          entry_date: document.getElementById("je_date").value,
+          currency_code: document.getElementById("je_currency").value,
+          memo: document.getElementById("je_memo").value,
+          lines,
+        });
+        e.target.reset();
+        document.getElementById("je-lines").innerHTML = "";
+        addJeLine();
+        addJeLine();
+        await loadEntries();
+        alerts.innerHTML = `<div class="success-banner">Journal entry posted.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not post journal entry")}</div>`;
+      }
+    });
+  })();
+</script>

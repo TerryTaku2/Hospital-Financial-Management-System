@@ -1,0 +1,95 @@
+<title>Patients — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Register patient</h2>
+      </div>
+      <form id="patient-form" class="grid grid-3">
+        <div class="form-row"><label>First name</label><input id="first_name" required /></div>
+        <div class="form-row"><label>Last name</label><input id="last_name" required /></div>
+        <div class="form-row"><label>Date of birth</label><input type="date" id="date_of_birth" /></div>
+        <div class="form-row"><label>Sex</label>
+          <select id="sex"><option value="">—</option><option value="M">Male</option><option value="F">Female</option></select>
+        </div>
+        <div class="form-row"><label>National ID</label><input id="national_id" /></div>
+        <div class="form-row"><label>Phone</label><input id="phone" /></div>
+        <div class="form-row" style="grid-column: span 3"><label>Address</label><input id="address" /></div>
+        <div><button class="btn" type="submit">Register</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Patients</h2>
+        <input id="search" placeholder="Search by name or national ID" style="width:260px" />
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Name</th><th>DOB</th><th>National ID</th><th>Phone</th><th></th></tr></thead>
+          <tbody id="patients-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+
+  async function loadPatients(q) {
+    const list = await api.get("/patients" + (q ? `?q=${encodeURIComponent(q)}` : ""));
+    document.getElementById("patients-body").innerHTML = list
+      .map(
+        (p) => `<tr>
+          <td><a href="/patient-detail.html?id=${p.id}">${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)}</a></td>
+          <td>${p.date_of_birth || "—"}</td>
+          <td>${escapeHtml(p.national_id || "—")}</td>
+          <td>${escapeHtml(p.phone || "—")}</td>
+          <td><a href="/patient-detail.html?id=${p.id}">View</a></td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    currentUser = await initPage("Patients");
+    if (!currentUser) return;
+    await loadPatients();
+
+    document.getElementById("search").addEventListener("input", (e) => loadPatients(e.target.value));
+
+    document.getElementById("patient-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post("/patients", {
+          branch_id: currentUser.branch_id,
+          first_name: document.getElementById("first_name").value,
+          last_name: document.getElementById("last_name").value,
+          date_of_birth: document.getElementById("date_of_birth").value || null,
+          sex: document.getElementById("sex").value || null,
+          national_id: document.getElementById("national_id").value || null,
+          phone: document.getElementById("phone").value || null,
+          address: document.getElementById("address").value || null,
+        });
+        e.target.reset();
+        await loadPatients();
+        alerts.innerHTML = `<div class="success-banner">Patient registered.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not register patient")}</div>`;
+      }
+    });
+  })();
+</script>

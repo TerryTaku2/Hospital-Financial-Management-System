@@ -1,21 +1,17 @@
-# Python / Django
-backend/venv/
+# Python
 __pycache__/
 *.pyc
-*.sqlite3
-backend/staticfiles/
-backend/media/
-.env
+backend/.venv/
+backend/*.db
+backend/.env
 
-# Node / React
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
+# Node (if ever added)
+node_modules/
 
-.claude/
-
-# Editors / OS
-.vscode/
-.idea/
+# OS
 .DS_Store
 Thumbs.db
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,90 @@
+<title>Users — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>New user</h2>
+      <form id="user-form" class="grid grid-3">
+        <div class="form-row"><label>Branch ID</label><input type="number" id="u_branch" required /></div>
+        <div class="form-row"><label>Username</label><input id="u_username" required /></div>
+        <div class="form-row"><label>Full name</label><input id="u_fullname" required /></div>
+        <div class="form-row"><label>Email</label><input type="email" id="u_email" required /></div>
+        <div class="form-row"><label>Password</label><input type="password" id="u_password" required /></div>
+        <div class="form-row"><label>Role</label>
+          <select id="u_role">
+            <option value="admin">Administrator</option>
+            <option value="accountant">Accountant</option>
+            <option value="cashier">Cashier</option>
+            <option value="auditor">Auditor</option>
+            <option value="clinician">Clinician</option>
+          </select>
+        </div>
+        <div><button class="btn" type="submit">Create user</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Users</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Username</th><th>Full name</th><th>Email</th><th>Role</th><th>Branch</th><th>Active</th></tr></thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  async function loadUsers() {
+    const users = await api.get("/users");
+    document.getElementById("users-body").innerHTML = users
+      .map((u) => `<tr><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.email)}</td>
+        <td>${ROLE_LABELS[u.role] || u.role}</td><td>${u.branch_id}</td><td>${u.is_active ? "Yes" : "No"}</td></tr>`)
+      .join("");
+  }
+
+  (async () => {
+    const user = await initPage("Users");
+    if (!user) return;
+    if (user.role !== "admin") {
+      document.body.innerHTML = `<div class="error-banner" style="margin:24px">Administrator access required.</div>`;
+      return;
+    }
+    document.getElementById("u_branch").value = user.branch_id;
+    if (!user.can_view_all_branches) {
+      document.getElementById("u_branch").readOnly = true;
+    }
+    await loadUsers();
+
+    document.getElementById("user-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post("/users", {
+          branch_id: Number(document.getElementById("u_branch").value),
+          username: document.getElementById("u_username").value,
+          full_name: document.getElementById("u_fullname").value,
+          email: document.getElementById("u_email").value,
+          password: document.getElementById("u_password").value,
+          role: document.getElementById("u_role").value,
+        });
+        e.target.reset();
+        await loadUsers();
+        alerts.innerHTML = `<div class="success-banner">User created.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create user")}</div>`;
+      }
+    });
+  })();
+</script>

@@ -1,0 +1,232 @@
+<title>Payment Point — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>Find patient</h2>
+      <div class="form-row" style="position:relative; max-width:400px">
+        <label>Patient</label>
+        <input type="text" id="patient_search" placeholder="Type patient name…" autocomplete="off" />
+        <div id="patient-suggestions" class="card" style="display:none; position:absolute; z-index:10; width:100%; max-height:220px; overflow-y:auto; padding:4px; margin-top:2px;"></div>
+      </div>
+      <p class="text-muted" id="selected-patient-label"></p>
+    </div>
+
+    <div class="card" id="outstanding-card" style="display:none">
+      <h2>Outstanding invoices</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Invoice #</th><th>Currency</th><th>Total</th><th>Paid</th><th>Balance</th><th></th></tr></thead>
+          <tbody id="outstanding-body"></tbody>
+        </table>
+      </div>
+      <p class="text-muted" id="no-outstanding" style="display:none">This patient has no outstanding balance.</p>
+    </div>
+
+    <div class="card" id="payment-card" style="display:none">
+      <h2>Take payment — <span id="payment-invoice-label"></span></h2>
+      <form id="payment-form" class="grid grid-3">
+        <div class="form-row"><label>Amount</label><input type="number" id="pay_amount" step="0.01" min="0.01" required /></div>
+        <div class="form-row"><label>Method</label>
+          <select id="pay_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
+        </div>
+        <div><button class="btn" type="submit">Take payment</button></div>
+      </form>
+    </div>
+
+    <div class="card" id="receipt-card" style="display:none">
+      <div class="success-banner">Payment recorded.</div>
+      <button type="button" class="btn secondary" id="print-receipt-btn">Print receipt</button>
+      <button type="button" class="btn secondary" id="new-payment-btn">Take another payment</button>
+    </div>
+  </div>
+</div>
+
+<div class="print-only" id="print-receipt">
+  <div class="print-header">
+    <div>
+      <h1 id="r-branch-name"></h1>
+      <div id="r-branch-address"></div>
+    </div>
+    <div style="text-align:right">
+      <h2 style="margin:0">RECEIPT</h2>
+      <div id="r-receipt-ref"></div>
+      <div id="r-receipt-date"></div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:20px">
+    <strong>Received from:</strong>
+    <div id="r-patient-name"></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Invoice #</th><th>Method</th><th>Amount received</th></tr></thead>
+    <tbody id="r-line"></tbody>
+  </table>
+
+  <div class="print-totals">
+    <div><span>Invoice total</span><span id="r-invoice-total"></span></div>
+    <div><span>Total paid to date</span><span id="r-total-paid"></span></div>
+    <div class="grand-total"><span>Balance remaining</span><span id="r-balance"></span></div>
+  </div>
+
+  <div class="print-footer">Printed on <span id="r-timestamp"></span> — Hospital Financial Management System</div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+  let selectedPatient = null;
+  let selectedInvoice = null;
+  let patientSearchTimer = null;
+  let lastReceipt = null;
+
+  function setupPatientSearch() {
+    const searchInput = document.getElementById("patient_search");
+    const suggestions = document.getElementById("patient-suggestions");
+
+    searchInput.addEventListener("input", () => {
+      const q = searchInput.value.trim();
+      clearTimeout(patientSearchTimer);
+      if (!q) {
+        suggestions.style.display = "none";
+        return;
+      }
+      patientSearchTimer = setTimeout(async () => {
+        const matches = await api.get(`/patients?q=${encodeURIComponent(q)}`);
+        suggestions.innerHTML = matches.length
+          ? matches
+              .map(
+                (p) => `<div class="patient-suggestion" data-id="${p.id}"
+                  style="padding:8px; cursor:pointer; border-bottom:1px solid var(--color-border)">
+                  ${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)} ${p.national_id ? "· " + escapeHtml(p.national_id) : ""}
+                </div>`
+              )
+              .join("")
+          : `<div class="text-muted" style="padding:6px">No matching patients.</div>`;
+        suggestions.style.display = "block";
+      }, 250);
+    });
+
+    suggestions.addEventListener("click", async (e) => {
+      const row = e.target.closest(".patient-suggestion");
+      if (!row) return;
+      suggestions.style.display = "none";
+      searchInput.value = "";
+      await selectPatient(Number(row.dataset.id));
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#patient_search") && !e.target.closest("#patient-suggestions")) {
+        suggestions.style.display = "none";
+      }
+    });
+  }
+
+  async function selectPatient(patientId) {
+    selectedPatient = await api.get(`/patients/${patientId}`);
+    document.getElementById("selected-patient-label").textContent =
+      `Selected: ${selectedPatient.first_name} ${selectedPatient.last_name}`;
+    document.getElementById("payment-card").style.display = "none";
+    document.getElementById("receipt-card").style.display = "none";
+    await loadOutstandingInvoices();
+  }
+
+  async function loadOutstandingInvoices() {
+    const invoices = await api.get(`/invoices?patient_id=${selectedPatient.id}`);
+    const outstanding = invoices.filter(
+      (i) => ["finalized", "partially_paid"].includes(i.status) && Number(i.total) - Number(i.amount_paid) > 0
+    );
+    document.getElementById("outstanding-card").style.display = "block";
+    document.getElementById("no-outstanding").style.display = outstanding.length ? "none" : "block";
+    document.getElementById("outstanding-body").innerHTML = outstanding
+      .map((i) => {
+        const balance = Number(i.total) - Number(i.amount_paid);
+        return `<tr><td>${i.invoice_number}</td><td>${i.currency_code}</td><td>${formatMoney(i.total, "")}</td>
+          <td>${formatMoney(i.amount_paid, "")}</td><td>${formatMoney(balance, "")}</td>
+          <td><button type="button" class="btn secondary select-invoice-btn" data-id="${i.id}">Take payment</button></td></tr>`;
+      })
+      .join("");
+
+    document.querySelectorAll(".select-invoice-btn").forEach((btn) =>
+      btn.addEventListener("click", () => selectInvoice(outstanding.find((i) => i.id === Number(btn.dataset.id))))
+    );
+  }
+
+  function selectInvoice(invoice) {
+    selectedInvoice = invoice;
+    const balance = Number(invoice.total) - Number(invoice.amount_paid);
+    document.getElementById("payment-invoice-label").textContent = `${invoice.invoice_number} (balance ${formatMoney(balance, invoice.currency_code)})`;
+    document.getElementById("pay_amount").value = balance.toFixed(2);
+    document.getElementById("pay_amount").max = balance.toFixed(2);
+    document.getElementById("payment-card").style.display = "block";
+    document.getElementById("receipt-card").style.display = "none";
+  }
+
+  async function populateReceipt(payment) {
+    const branches = await api.get("/branches");
+    const branch = branches.find((b) => b.id === selectedInvoice.branch_id);
+    const refreshedInvoice = await api.get(`/invoices/${selectedInvoice.id}`);
+    const balance = Number(refreshedInvoice.total) - Number(refreshedInvoice.amount_paid);
+
+    document.getElementById("r-branch-name").textContent = branch ? branch.name : "Hospital";
+    document.getElementById("r-branch-address").textContent = branch && branch.address ? branch.address : "";
+    document.getElementById("r-receipt-ref").textContent = `Receipt #${payment.id}`;
+    document.getElementById("r-receipt-date").textContent = new Date().toLocaleString();
+    document.getElementById("r-patient-name").textContent = `${selectedPatient.first_name} ${selectedPatient.last_name}`;
+    document.getElementById("r-line").innerHTML =
+      `<tr><td>${refreshedInvoice.invoice_number}</td><td>${payment.method}</td><td>${formatMoney(payment.amount, payment.currency_code)}</td></tr>`;
+    document.getElementById("r-invoice-total").textContent = formatMoney(refreshedInvoice.total, refreshedInvoice.currency_code);
+    document.getElementById("r-total-paid").textContent = formatMoney(refreshedInvoice.amount_paid, refreshedInvoice.currency_code);
+    document.getElementById("r-balance").textContent = formatMoney(balance, refreshedInvoice.currency_code);
+    document.getElementById("r-timestamp").textContent = new Date().toLocaleString();
+  }
+
+  (async () => {
+    currentUser = await initPage("Payment Point");
+    if (!currentUser) return;
+
+    setupPatientSearch();
+
+    document.getElementById("payment-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        const payment = await api.post(
+          "/payments",
+          {
+            branch_id: currentUser.branch_id,
+            invoice_id: selectedInvoice.id,
+            payer_type: "patient",
+            method: document.getElementById("pay_method").value,
+            currency_code: selectedInvoice.currency_code,
+            amount: Number(document.getElementById("pay_amount").value),
+          },
+          { "Idempotency-Key": newIdempotencyKey() }
+        );
+        await populateReceipt(payment);
+        document.getElementById("payment-card").style.display = "none";
+        document.getElementById("receipt-card").style.display = "block";
+        await loadOutstandingInvoices();
+        alerts.innerHTML = `<div class="success-banner">Payment of ${formatMoney(payment.amount, payment.currency_code)} recorded.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not record payment")}</div>`;
+      }
+    });
+
+    document.getElementById("print-receipt-btn").addEventListener("click", () => window.print());
+    document.getElementById("new-payment-btn").addEventListener("click", () => {
+      document.getElementById("receipt-card").style.display = "none";
+    });
+  })();
+</script>

@@ -1,0 +1,42 @@
+<title>Audit Log — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+
+    <div class="card">
+      <h2>Audit trail</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Time</th><th>Actor</th><th>Table</th><th>Record</th><th>Action</th><th>Before</th><th>After</th></tr></thead>
+          <tbody id="audit-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  (async () => {
+    const user = await initPage("Audit Log");
+    if (!user) return;
+    try {
+      const logs = await api.get("/audit-logs");
+      document.getElementById("audit-body").innerHTML = logs
+        .map(
+          (l) => `<tr><td>${new Date(l.created_at).toLocaleString()}</td><td>${l.actor_id ?? "system"}</td>
+            <td>${l.table_name}</td><td>${l.record_id}</td><td>${l.action}</td>
+            <td><code>${escapeHtml(JSON.stringify(l.before))}</code></td><td><code>${escapeHtml(JSON.stringify(l.after))}</code></td></tr>`
+        )
+        .join("");
+    } catch (err) {
+      document.getElementById("audit-body").innerHTML = `<tr><td colspan="7">${escapeHtml(err.detail || "Access denied")}</td></tr>`;
+    }
+  })();
+</script>

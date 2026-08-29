@@ -1,0 +1,309 @@
+<title>Patient — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2 id="patient-name">Loading…</h2>
+      <p class="text-muted" id="patient-meta"></p>
+    </div>
+
+    <div class="grid grid-3">
+      <div class="card stat-tile">
+        <div class="label">Amount Owed</div>
+        <div class="value" id="stat-owed">—</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="label">Deposits Held (unapplied)</div>
+        <div class="value" id="stat-deposits">—</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="label">Total Paid</div>
+        <div class="value" id="stat-paid">—</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Encounters</h2>
+      </div>
+      <form id="encounter-form" class="grid grid-3">
+        <div class="form-row"><label>Type</label>
+          <select id="enc_type"><option value="opd">OPD</option><option value="ipd">IPD</option></select>
+        </div>
+        <div class="form-row"><label>Attending doctor</label><input id="enc_doctor" /></div>
+        <div class="form-row"><label>Admission date/time</label><input type="datetime-local" id="enc_admission" required /></div>
+        <div><button class="btn" type="submit">Open encounter</button></div>
+      </form>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ID</th><th>Type</th><th>Doctor</th><th>Admitted</th><th>Status</th></tr></thead>
+          <tbody id="encounters-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="new-invoice-card">
+      <h2>New invoice for this patient</h2>
+      <form id="invoice-form">
+        <div class="grid grid-3">
+          <div class="form-row"><label>Encounter (optional)</label>
+            <select id="inv_encounter_id"><option value="">— none —</option></select>
+          </div>
+          <div class="form-row"><label>Currency</label>
+            <select id="inv_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+          </div>
+          <div class="form-row"><label>Payer type</label>
+            <select id="inv_payer_type"><option value="patient">Patient (self-pay)</option><option value="medical_aid">Medical Aid</option></select>
+          </div>
+          <div class="form-row" id="inv-provider-row" style="display:none">
+            <label>Medical aid provider</label>
+            <select id="inv_provider"></select>
+          </div>
+        </div>
+        <div id="inv-lines-container"></div>
+        <button type="button" class="btn secondary" id="inv-add-line">+ Add line</button>
+        <div class="mt-16"><button class="btn" type="submit">Create draft invoice</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Services received</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Invoice #</th><th>Service</th><th>Qty</th><th>Unit price</th><th>Amount</th><th>Invoice status</th></tr></thead>
+          <tbody id="services-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Invoices</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Invoice #</th><th>Currency</th><th>Total</th><th>Paid</th><th>Balance</th><th>Status</th><th></th></tr></thead>
+          <tbody id="invoices-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Payments</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Invoice #</th><th>Method</th><th>Amount</th></tr></thead>
+          <tbody id="payments-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Deposits</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>ID</th><th>Currency</th><th>Amount</th><th>Applied</th><th>Refunded</th><th>Status</th></tr></thead>
+          <tbody id="deposits-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Medical aid claims</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Claim #</th><th>Invoice #</th><th>Submitted</th><th>Approved</th><th>Status</th></tr></thead>
+          <tbody id="claims-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  const patientId = new URLSearchParams(window.location.search).get("id");
+  let currentUser = null;
+  let invoicesCache = [];
+
+  function addInvoiceLineRow() {
+    const container = document.getElementById("inv-lines-container");
+    const row = document.createElement("div");
+    row.className = "grid grid-3 inv-line-row";
+    row.innerHTML = `
+      <div class="form-row"><label>Description (what the charge is for)</label><input type="text" class="inv-line-description" placeholder="e.g. Consultation" required /></div>
+      <div class="form-row"><label class="inv-line-price-label">Amount</label><input type="number" class="inv-line-price" step="0.01" min="0" required /></div>
+      <div class="form-row inv-line-qty-row" style="display:none"><label>Quantity</label><input type="number" class="inv-line-qty" value="1" min="0.01" step="0.01" /></div>
+      <div class="form-row" style="align-self:end">
+        <label style="display:flex; align-items:center; gap:6px; font-weight:normal">
+          <input type="checkbox" class="inv-line-has-qty" style="width:auto" /> Bill by quantity (e.g. tablets, days)
+        </label>
+      </div>
+      <div><button type="button" class="btn secondary inv-remove-line">Remove</button></div>
+    `;
+    const qtyCheckbox = row.querySelector(".inv-line-has-qty");
+    const qtyRow = row.querySelector(".inv-line-qty-row");
+    const priceLabel = row.querySelector(".inv-line-price-label");
+    qtyCheckbox.addEventListener("change", () => {
+      qtyRow.style.display = qtyCheckbox.checked ? "block" : "none";
+      priceLabel.textContent = qtyCheckbox.checked ? "Unit price" : "Amount";
+      if (!qtyCheckbox.checked) row.querySelector(".inv-line-qty").value = "1";
+    });
+    row.querySelector(".inv-remove-line").addEventListener("click", () => row.remove());
+    container.appendChild(row);
+  }
+
+  async function loadAll() {
+    const patient = await api.get(`/patients/${patientId}`);
+    document.getElementById("patient-name").textContent = `${patient.first_name} ${patient.last_name}`;
+    document.getElementById("patient-meta").textContent =
+      `DOB: ${patient.date_of_birth || "—"} · National ID: ${patient.national_id || "—"} · Phone: ${patient.phone || "—"}`;
+
+    const encounters = await api.get(`/encounters?patient_id=${patientId}`);
+    document.getElementById("encounters-body").innerHTML = encounters
+      .map(
+        (e) => `<tr><td>${e.id}</td><td>${e.type.toUpperCase()}</td><td>${escapeHtml(e.attending_doctor_name || "—")}</td>
+          <td>${new Date(e.admission_date).toLocaleString()}</td><td>${statusBadge(e.status)}</td></tr>`
+      )
+      .join("");
+    document.getElementById("inv_encounter_id").innerHTML =
+      `<option value="">— none —</option>` +
+      encounters.map((e) => `<option value="${e.id}">#${e.id} — ${e.type.toUpperCase()} (${new Date(e.admission_date).toLocaleDateString()})</option>`).join("");
+
+    const invoices = await api.get(`/invoices?patient_id=${patientId}`);
+    invoicesCache = invoices;
+
+    document.getElementById("invoices-body").innerHTML = invoices
+      .map((i) => {
+        const balance = Number(i.total) - Number(i.amount_paid);
+        return `<tr><td><a href="/invoice-detail.html?id=${i.id}">${i.invoice_number}</a></td><td>${i.currency_code}</td>
+          <td>${formatMoney(i.total, "")}</td><td>${formatMoney(i.amount_paid, "")}</td><td>${formatMoney(balance, "")}</td>
+          <td>${statusBadge(i.status)}</td><td><a href="/invoice-detail.html?id=${i.id}">View</a></td></tr>`;
+      })
+      .join("");
+
+    const services = invoices.flatMap((i) =>
+      i.lines.map((l) => ({ invoice: i, line: l }))
+    );
+    document.getElementById("services-body").innerHTML = services
+      .map(
+        ({ invoice, line }) => `<tr><td>${new Date(invoice.created_at).toLocaleDateString()}</td>
+          <td><a href="/invoice-detail.html?id=${invoice.id}">${invoice.invoice_number}</a></td>
+          <td>${escapeHtml(line.description)}</td><td>${line.quantity}</td><td>${formatMoney(line.unit_price, "")}</td>
+          <td>${formatMoney(line.amount, "")}</td><td>${statusBadge(invoice.status)}</td></tr>`
+      )
+      .join("") || `<tr><td colspan="7" class="text-muted">No services recorded yet.</td></tr>`;
+
+    const owed = invoices
+      .filter((i) => ["finalized", "partially_paid"].includes(i.status))
+      .reduce((sum, i) => sum + (Number(i.total) - Number(i.amount_paid)), 0);
+    const totalPaid = invoices.reduce((sum, i) => sum + Number(i.amount_paid), 0);
+    document.getElementById("stat-owed").textContent = formatMoney(owed, "");
+    document.getElementById("stat-paid").textContent = formatMoney(totalPaid, "");
+
+    const payments = await api.get(`/payments?patient_id=${patientId}`);
+    document.getElementById("payments-body").innerHTML = payments
+      .map((p) => {
+        const inv = invoices.find((i) => i.id === p.invoice_id);
+        return `<tr><td><a href="/invoice-detail.html?id=${p.invoice_id}">${inv ? inv.invoice_number : "#" + p.invoice_id}</a></td>
+          <td>${p.method}</td><td>${formatMoney(p.amount, p.currency_code)}</td></tr>`;
+      })
+      .join("") || `<tr><td colspan="3" class="text-muted">No payments recorded yet.</td></tr>`;
+
+    const deposits = await api.get(`/deposits?patient_id=${patientId}`);
+    document.getElementById("deposits-body").innerHTML = deposits
+      .map(
+        (d) => `<tr><td>${d.id}</td><td>${d.currency_code}</td><td>${formatMoney(d.amount, "")}</td>
+          <td>${formatMoney(d.amount_applied, "")}</td><td>${formatMoney(d.amount_refunded, "")}</td><td>${statusBadge(d.status)}</td></tr>`
+      )
+      .join("") || `<tr><td colspan="6" class="text-muted">No deposits recorded yet.</td></tr>`;
+    const depositsHeld = deposits
+      .filter((d) => ["held", "partially_applied"].includes(d.status))
+      .reduce((sum, d) => sum + (Number(d.amount) - Number(d.amount_applied) - Number(d.amount_refunded)), 0);
+    document.getElementById("stat-deposits").textContent = formatMoney(depositsHeld, "");
+
+    const claims = await api.get(`/claims?patient_id=${patientId}`);
+    document.getElementById("claims-body").innerHTML = claims
+      .map((c) => {
+        const inv = invoices.find((i) => i.id === c.invoice_id);
+        return `<tr><td>${c.claim_number}</td><td><a href="/invoice-detail.html?id=${c.invoice_id}">${inv ? inv.invoice_number : "#" + c.invoice_id}</a></td>
+          <td>${formatMoney(c.submitted_amount, c.currency_code)}</td>
+          <td>${c.approved_amount != null ? formatMoney(c.approved_amount, c.currency_code) : "—"}</td>
+          <td>${statusBadge(c.status)}</td></tr>`;
+      })
+      .join("") || `<tr><td colspan="5" class="text-muted">No medical aid claims filed yet.</td></tr>`;
+  }
+
+  (async () => {
+    currentUser = await initPage("Patient Detail");
+    if (!currentUser) return;
+
+    const canBill = ["admin", "cashier", "accountant"].includes(currentUser.role);
+    document.getElementById("new-invoice-card").style.display = canBill ? "block" : "none";
+
+    if (canBill) {
+      const providers = await api.get("/medical-aid-providers");
+      document.getElementById("inv_provider").innerHTML = providers.map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join("");
+      document.getElementById("inv_payer_type").addEventListener("change", (e) => {
+        document.getElementById("inv-provider-row").style.display = e.target.value === "medical_aid" ? "block" : "none";
+      });
+      addInvoiceLineRow();
+      document.getElementById("inv-add-line").addEventListener("click", addInvoiceLineRow);
+
+      document.getElementById("invoice-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const alerts = document.getElementById("alerts");
+        alerts.innerHTML = "";
+        const lines = Array.from(document.querySelectorAll(".inv-line-row")).map((row) => ({
+          description: row.querySelector(".inv-line-description").value,
+          unit_price: Number(row.querySelector(".inv-line-price").value),
+          quantity: Number(row.querySelector(".inv-line-qty").value),
+        }));
+        const payerType = document.getElementById("inv_payer_type").value;
+        try {
+          const invoice = await api.post("/invoices", {
+            branch_id: currentUser.branch_id,
+            patient_id: Number(patientId),
+            encounter_id: document.getElementById("inv_encounter_id").value ? Number(document.getElementById("inv_encounter_id").value) : null,
+            currency_code: document.getElementById("inv_currency").value,
+            payer_type: payerType,
+            medical_aid_provider_id: payerType === "medical_aid" ? Number(document.getElementById("inv_provider").value) : null,
+            lines,
+          });
+          alerts.innerHTML = `<div class="success-banner">Draft invoice ${invoice.invoice_number} created. <a href="/invoice-detail.html?id=${invoice.id}">Open it</a> to finalize.</div>`;
+          await loadAll();
+        } catch (err) {
+          alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create invoice")}</div>`;
+        }
+      });
+    }
+
+    await loadAll();
+
+    document.getElementById("encounter-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post("/encounters", {
+          branch_id: currentUser.branch_id,
+          patient_id: Number(patientId),
+          type: document.getElementById("enc_type").value,
+          attending_doctor_name: document.getElementById("enc_doctor").value || null,
+          admission_date: new Date(document.getElementById("enc_admission").value).toISOString(),
+        });
+        e.target.reset();
+        await loadAll();
+        alerts.innerHTML = `<div class="success-banner">Encounter opened.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not open encounter")}</div>`;
+      }
+    });
+  })();
+</script>
