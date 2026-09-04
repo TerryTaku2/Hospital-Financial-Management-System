@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { href: "/claims.html", label: "Medical Aid Claims", roles: ["admin", "cashier", "accountant"] },
   { href: "/accounts.html", label: "Chart of Accounts", roles: ["admin", "accountant", "auditor"] },
   { href: "/journal.html", label: "Journal Entries", roles: ["admin", "accountant", "auditor"] },
+  { href: "/daily-transactions.html", label: "Daily Transactions", roles: ["admin", "cashier", "accountant", "auditor"], section: "Reports" },
   { href: "/trial-balance.html", label: "Trial Balance", roles: ["admin", "accountant", "auditor"], section: "Reports" },
   { href: "/income-statement.html", label: "Income Statement", roles: ["admin", "accountant", "auditor"], section: "Reports" },
   { href: "/ar-aging.html", label: "AR Aging", roles: ["admin", "accountant", "auditor"], section: "Reports" },

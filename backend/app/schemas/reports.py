@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -47,3 +48,31 @@ class IncomeStatementOut(BaseModel):
     total_income: Decimal
     total_expense: Decimal
     net_income: Decimal
+
+
+class DailyTransactionRow(BaseModel):
+    kind: str
+    id: int
+    time: datetime
+    patient_id: int | None
+    patient_name: str | None
+    reference: str
+    description: str
+    method: str | None
+    currency_code: str
+    amount: Decimal
+    status: str
+
+
+class DailyTransactionsSummary(BaseModel):
+    total_invoiced: dict[str, Decimal]
+    total_payments: dict[str, Decimal]
+    total_deposits: dict[str, Decimal]
+    total_refunds: dict[str, Decimal]
+    net_cash_collected: dict[str, Decimal]
+
+
+class DailyTransactionsOut(BaseModel):
+    transaction_date: date
+    rows: list[DailyTransactionRow]
+    summary: DailyTransactionsSummary

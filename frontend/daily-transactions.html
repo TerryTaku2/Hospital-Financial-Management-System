@@ -1,0 +1,129 @@
+<title>Daily Transactions — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Daily transactions</h2>
+        <div style="display:flex; align-items:center; gap:16px">
+          <div id="branch-filter-row" style="display:none">
+            <label class="text-muted" style="font-size:12px">Branch</label>
+            <select id="branch-filter" style="width:auto; display:inline-block"><option value="">All branches</option></select>
+          </div>
+          <div>
+            <label class="text-muted" style="font-size:12px">Date</label><br />
+            <input type="date" id="date-filter" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-3">
+      <div class="card stat-tile">
+        <div class="label">Invoiced today</div>
+        <div class="value" id="sum-invoiced">—</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="label">Payments received</div>
+        <div class="value" id="sum-payments">—</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="label">Deposits received</div>
+        <div class="value" id="sum-deposits">—</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="label">Refunds paid</div>
+        <div class="value" id="sum-refunds">—</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="label">Net cash collected</div>
+        <div class="value" id="sum-net-cash">—</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>Type</th><th>Reference</th><th>Patient</th><th>Description</th><th>Method</th><th>Amount</th><th>Status</th></tr>
+          </thead>
+          <tbody id="transactions-body"></tbody>
+        </table>
+      </div>
+      <p class="text-muted" id="empty-note" style="display:none">No transactions recorded for this day.</p>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  function formatCurrencyMap(map) {
+    const entries = Object.entries(map);
+    if (entries.length === 0) return "—";
+    return entries.map(([code, amt]) => formatMoney(amt, code)).join(" · ");
+  }
+
+  function formatTime(iso) {
+    return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+
+  async function loadDailyTransactions() {
+    const date = document.getElementById("date-filter").value;
+    const branchId = document.getElementById("branch-filter").value;
+    const params = new URLSearchParams();
+    if (date) params.set("transaction_date", date);
+    if (branchId) params.set("branch_id", branchId);
+
+    const report = await api.get(`/reports/daily-transactions?${params.toString()}`);
+
+    document.getElementById("sum-invoiced").textContent = formatCurrencyMap(report.summary.total_invoiced);
+    document.getElementById("sum-payments").textContent = formatCurrencyMap(report.summary.total_payments);
+    document.getElementById("sum-deposits").textContent = formatCurrencyMap(report.summary.total_deposits);
+    document.getElementById("sum-refunds").textContent = formatCurrencyMap(report.summary.total_refunds);
+    document.getElementById("sum-net-cash").textContent = formatCurrencyMap(report.summary.net_cash_collected);
+
+    document.getElementById("empty-note").style.display = report.rows.length === 0 ? "block" : "none";
+    document.getElementById("transactions-body").innerHTML = report.rows
+      .map(
+        (r) => `<tr>
+          <td>${formatTime(r.time)}</td>
+          <td><span class="badge kind-${r.kind}">${r.kind}</span></td>
+          <td>${escapeHtml(r.reference)}</td>
+          <td>${r.patient_id ? `<a href="/patient-detail.html?id=${r.patient_id}">${escapeHtml(r.patient_name)}</a>` : "—"}</td>
+          <td>${escapeHtml(r.description)}</td>
+          <td>${r.method ? escapeHtml(r.method) : "—"}</td>
+          <td>${formatMoney(r.amount, r.currency_code)}</td>
+          <td>${statusBadge(r.status)}</td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    const user = await initPage("Daily Transactions");
+    if (!user) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    document.getElementById("date-filter").value = today;
+    document.getElementById("date-filter").addEventListener("change", loadDailyTransactions);
+
+    if (user.can_view_all_branches) {
+      const branches = await api.get("/branches");
+      document.getElementById("branch-filter-row").style.display = "block";
+      document.getElementById("branch-filter").insertAdjacentHTML(
+        "beforeend",
+        branches.map((b) => `<option value="${b.id}">${escapeHtml(b.name)}</option>`).join("")
+      );
+      document.getElementById("branch-filter").addEventListener("change", loadDailyTransactions);
+    }
+
+    await loadDailyTransactions();
+  })();
+</script>
