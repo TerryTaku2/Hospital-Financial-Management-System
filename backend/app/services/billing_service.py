@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit import write_audit_log
 from app.models.billing import ChargeItem, Invoice, InvoiceLine
 from app.models.enums import AuditAction, InvoiceStatus, JournalSourceType
+from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.billing import InvoiceCreate
 from app.services import account_lookup, coa_codes
@@ -28,6 +29,22 @@ async def create_invoice(db: AsyncSession, invoice_in: InvoiceCreate, user: User
     if not invoice_in.lines:
         raise PostingError("An invoice needs at least one line")
 
+    patient_id = invoice_in.patient_id
+    if patient_id is None:
+        patient = Patient(branch_id=invoice_in.branch_id, **invoice_in.new_patient.model_dump())
+        db.add(patient)
+        await db.flush()
+        await write_audit_log(
+            db,
+            actor_id=user.id,
+            branch_id=patient.branch_id,
+            table_name="patients",
+            record_id=patient.id,
+            action=AuditAction.CREATE,
+            after={"first_name": patient.first_name, "last_name": patient.last_name, "auto_registered_at_billing": True},
+        )
+        patient_id = patient.id
+
     charge_item_ids = {line.charge_item_id for line in invoice_in.lines if line.charge_item_id is not None}
     charge_items: dict[int, ChargeItem] = {}
     for charge_item_id in charge_item_ids:
@@ -40,7 +57,7 @@ async def create_invoice(db: AsyncSession, invoice_in: InvoiceCreate, user: User
 
     invoice = Invoice(
         branch_id=invoice_in.branch_id,
-        patient_id=invoice_in.patient_id,
+        patient_id=patient_id,
         encounter_id=invoice_in.encounter_id,
         invoice_number=_generate_invoice_number(),
         currency_code=invoice_in.currency_code,

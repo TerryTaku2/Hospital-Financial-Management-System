@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, model_validator
@@ -47,14 +47,31 @@ class InvoiceLineOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class InvoiceNewPatient(BaseModel):
+    first_name: str
+    last_name: str
+    date_of_birth: date | None = None
+    sex: str | None = None
+    national_id: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
 class InvoiceCreate(BaseModel):
     branch_id: int
-    patient_id: int
+    patient_id: int | None = None
+    new_patient: InvoiceNewPatient | None = None
     encounter_id: int | None = None
     currency_code: str
     payer_type: PayerType = PayerType.PATIENT
     medical_aid_provider_id: int | None = None
     lines: list[InvoiceLineIn]
+
+    @model_validator(mode="after")
+    def exactly_one_patient_source(self) -> "InvoiceCreate":
+        if (self.patient_id is None) == (self.new_patient is None):
+            raise ValueError("Provide either patient_id (existing patient) or new_patient (to register one), not both")
+        return self
 
 
 class InvoiceOut(BaseModel):
