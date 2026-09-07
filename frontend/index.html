@@ -79,9 +79,9 @@
         </button>
       </form>
 
-      <div class="login-divider">or</div>
+      <div class="login-divider" id="demo-divider" hidden>or</div>
 
-      <button class="btn-demo" type="button" id="demo-login-btn">Login to Demo Account</button>
+      <button class="btn-demo" type="button" id="demo-login-btn" hidden>Login to Demo Account</button>
 
       <p class="login-footer-note">Secure staff access · Hospital Finance</p>
     </div>
@@ -127,9 +127,9 @@
     const errorBox = document.getElementById("error-box");
     errorBox.innerHTML = "";
     demoLoginBtn.disabled = true;
-    demoLoginBtn.textContent = "Signing in…";
+    demoLoginBtn.textContent = "Setting up your demo…";
     try {
-      await login("admin", "ChangeMe123!");
+      await demoLogin();
       window.location.href = "/dashboard.html";
     } catch (err) {
       errorBox.innerHTML = `<div class="error-banner">${err.detail || "Demo login failed"}</div>`;
@@ -137,6 +137,16 @@
       demoLoginBtn.textContent = "Login to Demo Account";
     }
   });
+
+  (async () => {
+    try {
+      const health = await fetch("/api/health").then((r) => r.json());
+      if (health.demo_mode) {
+        document.getElementById("demo-divider").hidden = false;
+        demoLoginBtn.hidden = false;
+      }
+    } catch (_) {}
+  })();
 
   (async () => {
     try {

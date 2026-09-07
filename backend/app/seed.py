@@ -10,6 +10,7 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.models.accounting import Account
@@ -39,82 +40,92 @@ DEFAULT_ACCOUNTS = [
 ]
 
 
-async def seed() -> None:
-    """Assumes `alembic upgrade head` has already created the schema."""
-    async with AsyncSessionLocal() as db:
-        if (await db.execute(select(Currency).where(Currency.code == "USD"))).scalars().first() is None:
-            db.add(Currency(code="USD", name="US Dollar", symbol="$"))
-        if (await db.execute(select(Currency).where(Currency.code == "ZWG"))).scalars().first() is None:
-            db.add(Currency(code="ZWG", name="Zimbabwe Gold", symbol="ZWG"))
+async def seed_core(db: AsyncSession) -> None:
+    """The actual seeding logic, operating on a caller-provided session.
+
+    Split out from `seed()` so callers that already have a request-scoped
+    session (e.g. the demo-login flow) can reuse this instead of opening a
+    second, independent session/transaction mid-request.
+    """
+    if (await db.execute(select(Currency).where(Currency.code == "USD"))).scalars().first() is None:
+        db.add(Currency(code="USD", name="US Dollar", symbol="$"))
+    if (await db.execute(select(Currency).where(Currency.code == "ZWG"))).scalars().first() is None:
+        db.add(Currency(code="ZWG", name="Zimbabwe Gold", symbol="ZWG"))
+    await db.flush()
+
+    if (await db.execute(select(ExchangeRate).where(ExchangeRate.currency_code == "ZWG"))).scalars().first() is None:
+        db.add(ExchangeRate(currency_code="ZWG", rate_to_base=Decimal("1"), effective_date=date.today()))
+
+    branch = (await db.execute(select(Branch).where(Branch.code == "MAIN"))).scalars().first()
+    if branch is None:
+        branch = Branch(code="MAIN", name="Main Hospital", base_currency_code="USD", is_main=True)
+        db.add(branch)
         await db.flush()
 
-        if (await db.execute(select(ExchangeRate).where(ExchangeRate.currency_code == "ZWG"))).scalars().first() is None:
-            db.add(ExchangeRate(currency_code="ZWG", rate_to_base=Decimal("1"), effective_date=date.today()))
+    for code, name, acc_type in DEFAULT_ACCOUNTS:
+        if (await db.execute(select(Account).where(Account.code == code))).scalars().first() is None:
+            db.add(Account(code=code, name=name, type=acc_type))
+    await db.flush()
 
-        branch = (await db.execute(select(Branch).where(Branch.code == "MAIN"))).scalars().first()
-        if branch is None:
-            branch = Branch(code="MAIN", name="Main Hospital", base_currency_code="USD", is_main=True)
-            db.add(branch)
-            await db.flush()
+    if (await db.execute(select(User).where(User.username == "admin"))).scalars().first() is None:
+        db.add(
+            User(
+                branch_id=branch.id,
+                username="admin",
+                email="admin@example.com",
+                full_name="System Administrator",
+                hashed_password=hash_password("ChangeMe123!"),
+                role=RoleEnum.ADMIN,
+            )
+        )
 
-        for code, name, acc_type in DEFAULT_ACCOUNTS:
-            if (await db.execute(select(Account).where(Account.code == code))).scalars().first() is None:
-                db.add(Account(code=code, name=name, type=acc_type))
-        await db.flush()
+    provider_defs = [
+        ("PSMAS", "Premier Service Medical Aid Society"),
+        ("CIMAS", "CIMAS Medical Aid Society"),
+        ("FIRSTMUTUAL", "First Mutual Health"),
+    ]
+    for code, name in provider_defs:
+        if (await db.execute(select(MedicalAidProvider).where(MedicalAidProvider.code == code))).scalars().first() is None:
+            db.add(MedicalAidProvider(code=code, name=name))
+    await db.flush()
 
-        if (await db.execute(select(User).where(User.username == "admin"))).scalars().first() is None:
+    revenue_account_id = (
+        await db.execute(select(Account.id).where(Account.code == "4000"))
+    ).scalar_one()
+    pharmacy_account_id = (
+        await db.execute(select(Account.id).where(Account.code == "4010"))
+    ).scalar_one()
+    procedures_account_id = (
+        await db.execute(select(Account.id).where(Account.code == "4020"))
+    ).scalar_one()
+
+    charge_item_defs = [
+        ("CONSULT-GEN", "General Consultation", "Consultation", Decimal("25.00"), revenue_account_id),
+        ("CONSULT-SPEC", "Specialist Consultation", "Consultation", Decimal("50.00"), revenue_account_id),
+        ("PROC-DRESSING", "Wound Dressing", "Procedure", Decimal("15.00"), procedures_account_id),
+        ("PHARM-PARACETAMOL", "Paracetamol 500mg (strip)", "Pharmacy", Decimal("2.00"), pharmacy_account_id),
+    ]
+    for code, name, category, price, acct_id in charge_item_defs:
+        if (await db.execute(select(ChargeItem).where(ChargeItem.code == code))).scalars().first() is None:
             db.add(
-                User(
+                ChargeItem(
                     branch_id=branch.id,
-                    username="admin",
-                    email="admin@example.com",
-                    full_name="System Administrator",
-                    hashed_password=hash_password("ChangeMe123!"),
-                    role=RoleEnum.ADMIN,
+                    code=code,
+                    name=name,
+                    category=category,
+                    default_price=price,
+                    currency_code="USD",
+                    revenue_account_id=acct_id,
                 )
             )
 
-        provider_defs = [
-            ("PSMAS", "Premier Service Medical Aid Society"),
-            ("CIMAS", "CIMAS Medical Aid Society"),
-            ("FIRSTMUTUAL", "First Mutual Health"),
-        ]
-        for code, name in provider_defs:
-            if (await db.execute(select(MedicalAidProvider).where(MedicalAidProvider.code == code))).scalars().first() is None:
-                db.add(MedicalAidProvider(code=code, name=name))
-        await db.flush()
+    await db.commit()
 
-        revenue_account_id = (
-            await db.execute(select(Account.id).where(Account.code == "4000"))
-        ).scalar_one()
-        pharmacy_account_id = (
-            await db.execute(select(Account.id).where(Account.code == "4010"))
-        ).scalar_one()
-        procedures_account_id = (
-            await db.execute(select(Account.id).where(Account.code == "4020"))
-        ).scalar_one()
 
-        charge_item_defs = [
-            ("CONSULT-GEN", "General Consultation", "Consultation", Decimal("25.00"), revenue_account_id),
-            ("CONSULT-SPEC", "Specialist Consultation", "Consultation", Decimal("50.00"), revenue_account_id),
-            ("PROC-DRESSING", "Wound Dressing", "Procedure", Decimal("15.00"), procedures_account_id),
-            ("PHARM-PARACETAMOL", "Paracetamol 500mg (strip)", "Pharmacy", Decimal("2.00"), pharmacy_account_id),
-        ]
-        for code, name, category, price, acct_id in charge_item_defs:
-            if (await db.execute(select(ChargeItem).where(ChargeItem.code == code))).scalars().first() is None:
-                db.add(
-                    ChargeItem(
-                        branch_id=branch.id,
-                        code=code,
-                        name=name,
-                        category=category,
-                        default_price=price,
-                        currency_code="USD",
-                        revenue_account_id=acct_id,
-                    )
-                )
-
-        await db.commit()
+async def seed() -> None:
+    """Assumes `alembic upgrade head` has already created the schema."""
+    async with AsyncSessionLocal() as db:
+        await seed_core(db)
 
     print("Seed complete. Admin login: username=admin password=ChangeMe123!")
 

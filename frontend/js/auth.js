@@ -14,6 +14,10 @@ async function login(username, password) {
   return api.post("/auth/login", { username, password });
 }
 
+async function demoLogin() {
+  return api.post("/auth/demo-login");
+}
+
 async function logout() {
   await api.post("/auth/logout");
   window.location.href = "/index.html";
