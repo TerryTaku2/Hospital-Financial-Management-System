@@ -1,44 +1,63 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
+/* ─────────────────────────────────────────────────────────────
+   Hospital Finance — Stylesheet
+   Theme: "Dark Engineering", adopted from the store ERP sibling
+   project. Every color a component uses comes from a CSS custom
+   property defined in :root below, so the palette lives in one
+   place. RGB-triplet variables (--success-rgb etc.) exist for
+   translucent badge/banner fills; the paired "-text" variables
+   are the readable-on-dark foreground for that same status.
+───────────────────────────────────────────────────────────── */
+
 :root {
   --sidebar-w: 232px;
 
-  --color-bg: #f4f6f9;
-  --color-surface: #ffffff;
-  --color-surface-raised: #fbfcfd;
-  --color-border: #e1e6ec;
-  --color-border-soft: #edf0f4;
-  --color-text: #16202c;
-  --color-text-muted: #64748b;
-  --color-text-faint: #94a3b8;
+  --color-bg: #0f172a;
+  --color-surface: #16213a;
+  --color-surface-raised: #1c2a4a;
+  --color-border: #24324f;
+  --color-border-soft: rgba(255, 255, 255, 0.06);
+  --overlay-weak: rgba(255, 255, 255, 0.03);
+  --overlay-mid: rgba(255, 255, 255, 0.06);
+  --color-text: #e2e8f0;
+  --color-text-muted: #94a3b8;
+  --color-text-faint: #64748b;
 
-  --color-primary: #1a5fb4;
-  --color-primary-rgb: 26, 95, 180;
-  --color-primary-dark: #144a8e;
-  --color-primary-tint: rgba(26, 95, 180, 0.1);
+  --color-primary: #2563eb;
+  --color-primary-rgb: 37, 99, 235;
+  --color-primary-dark: #1d4ed8;
+  --color-primary-tint: rgba(37, 99, 235, 0.15);
+  --color-primary-text: #93c5fd;
 
-  --color-danger: #c0392b;
-  --color-danger-rgb: 192, 57, 43;
-  --color-success: #1e8e3e;
-  --color-success-rgb: 30, 142, 62;
-  --color-warning: #b8860b;
-  --color-warning-rgb: 184, 134, 11;
+  --success-rgb: 16, 185, 129;
+  --color-success: #10b981;
+  --color-success-text: #34d399;
 
-  --sidebar-bg: #0d1b30;
-  --sidebar-bg-raised: #132441;
-  --sidebar-text: #9fb3cc;
-  --sidebar-text-dim: #64809f;
+  --warning-rgb: 245, 158, 11;
+  --color-warning: #f59e0b;
+  --color-warning-text: #fbbf24;
+
+  --danger-rgb: 244, 63, 94;
+  --color-danger: #f43f5e;
+  --color-danger-dark: #be123c;
+  --color-danger-text: #fb7185;
+
+  --sidebar-bg: #16181a;
   --sidebar-fg: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.08);
-  --sidebar-hover: rgba(255, 255, 255, 0.06);
-  --sidebar-active-bg: rgba(58, 130, 224, 0.18);
-  --sidebar-active-text: #7fb0f2;
+  --sidebar-text: #94a3b8;
+  --sidebar-text-dim: #475569;
+  --sidebar-border: #334155;
+  --sidebar-hover: rgba(255, 255, 255, 0.05);
+  --sidebar-active-bg: rgba(37, 99, 235, 0.18);
+  --sidebar-active-text: #60a5fa;
+  --sidebar-control-bg: #1f2937;
 
-  --radius: 9px;
-  --radius-sm: 6px;
-  --shadow-sm: 0 1px 2px rgba(16, 30, 54, 0.06);
-  --shadow: 0 1px 3px rgba(16, 30, 54, 0.07), 0 4px 12px rgba(16, 30, 54, 0.04);
-  --shadow-md: 0 12px 32px rgba(16, 30, 54, 0.14);
+  --radius: 10px;
+  --radius-sm: 7px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 12px 32px rgba(0, 0, 0, 0.5);
 
   font-family: 'Inter', -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -56,8 +75,8 @@ body {
 
 h1, h2, h3 { font-weight: 700; letter-spacing: -0.01em; }
 
-a { color: var(--color-primary); text-decoration: none; }
-a:hover { color: var(--color-primary-dark); }
+a { color: var(--color-primary-text); text-decoration: none; }
+a:hover { color: var(--color-primary); }
 
 /* ---------- App shell / sidebar ---------- */
 
@@ -93,7 +112,7 @@ a:hover { color: var(--color-primary-dark); }
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--color-primary), #3a82e0);
+  background: linear-gradient(135deg, var(--color-primary), #3b82f6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -108,7 +127,7 @@ a:hover { color: var(--color-primary-dark); }
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--sidebar-text);
   text-decoration: none;
   font-size: 13.3px;
@@ -154,7 +173,7 @@ a:hover { color: var(--color-primary-dark); }
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(13, 27, 48, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   z-index: 90;
 }
 .sidebar-overlay.show { display: block; }
@@ -176,7 +195,7 @@ a:hover { color: var(--color-primary-dark); }
   margin-bottom: 22px;
 }
 
-.topbar h1 { font-size: 21px; margin: 0; }
+.topbar h1 { font-size: 21px; margin: 0; color: var(--color-text); }
 
 .user-badge { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--color-text-muted); }
 
@@ -197,6 +216,7 @@ a:hover { color: var(--color-primary-dark); }
   margin: 0 0 14px 0;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--color-border-soft);
+  color: var(--color-text);
 }
 
 .grid { display: grid; gap: 16px; }
@@ -223,16 +243,16 @@ a:hover { color: var(--color-primary-dark); }
 .stat-tile.warn::before { background: var(--color-warning); }
 
 .stat-tile .label { font-size: 11.5px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.stat-tile .value { font-size: 27px; font-weight: 800; margin-top: 6px; letter-spacing: -0.01em; }
+.stat-tile .value { font-size: 27px; font-weight: 800; margin-top: 6px; letter-spacing: -0.01em; color: var(--color-text); }
 .stat-tile .sub { font-size: 12px; color: var(--color-text-muted); margin-top: 4px; }
 
 /* ---------- Charts — inline SVG, no library. See frontend/js/charts.js. ---------- */
 :root {
-  --chart-series-1: var(--color-primary);
+  --chart-series-1: var(--color-primary-text);
   --chart-surface: var(--color-surface);
   --chart-ink: var(--color-text);
   --chart-ink-secondary: var(--color-text-muted);
-  --chart-grid: #eef1f5;
+  --chart-grid: rgba(255, 255, 255, 0.08);
   --chart-baseline: var(--color-border);
 }
 
@@ -242,7 +262,7 @@ a:hover { color: var(--color-primary-dark); }
 .chart-gridline { stroke: var(--chart-grid); stroke-width: 1; }
 .chart-axis-label { font-size: 10px; fill: var(--chart-ink-secondary); }
 
-.chart-area { fill: var(--chart-series-1); opacity: 0.1; stroke: none; }
+.chart-area { fill: var(--chart-series-1); opacity: 0.16; stroke: none; }
 .chart-line { fill: none; stroke: var(--chart-series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .chart-end-dot { fill: var(--chart-series-1); stroke: var(--chart-surface); stroke-width: 2; }
 .chart-end-label { font-size: 12px; font-weight: 600; fill: var(--chart-ink); }
@@ -263,8 +283,9 @@ a:hover { color: var(--color-primary-dark); }
 .chart-tooltip {
   position: fixed;
   z-index: 1000;
-  background: var(--sidebar-bg);
-  color: #fff;
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   padding: 6px 10px;
   border-radius: var(--radius-sm);
   font-size: 12px;
@@ -276,7 +297,7 @@ a:hover { color: var(--color-primary-dark); }
 /* ---------- Tables ---------- */
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--color-border-soft); white-space: nowrap; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--color-border-soft); white-space: nowrap; color: var(--color-text); }
 th {
   color: var(--color-text-muted);
   font-weight: 700;
@@ -284,9 +305,9 @@ th {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface-raised);
+  background: var(--overlay-weak);
 }
-tbody tr:hover { background: var(--color-surface-raised); }
+tbody tr:hover { background: var(--overlay-weak); }
 
 .table-scroll { overflow-x: auto; }
 
@@ -309,10 +330,10 @@ tbody tr:hover { background: var(--color-surface-raised); }
 }
 .btn:hover { background: var(--color-primary-dark); border-color: var(--color-primary-dark); }
 .btn:active { transform: translateY(1px); }
-.btn.secondary { background: transparent; color: var(--color-primary); }
-.btn.secondary:hover { background: var(--color-primary-tint); border-color: var(--color-primary); }
+.btn.secondary { background: transparent; color: var(--color-text); border-color: var(--color-border); }
+.btn.secondary:hover { background: var(--color-primary-tint); border-color: var(--color-primary); color: var(--color-primary-text); }
 .btn.danger { background: var(--color-danger); border-color: var(--color-danger); }
-.btn.danger:hover { background: #a5311f; border-color: #a5311f; }
+.btn.danger:hover { background: var(--color-danger-dark); border-color: var(--color-danger-dark); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
 /* ---------- Badges ---------- */
@@ -327,17 +348,17 @@ tbody tr:hover { background: var(--color-surface-raised); }
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
-.badge.draft { background: #eef1f4; color: #556270; }
-.badge.finalized, .badge.submitted, .badge.held { background: #e3ecfb; color: var(--color-primary-dark); }
-.badge.paid, .badge.approved, .badge.applied { background: #e1f5e6; color: var(--color-success); }
-.badge.void, .badge.rejected { background: #fbe6e3; color: var(--color-danger); }
-.badge.partially_paid, .badge.partially_applied { background: #fdf1d8; color: var(--color-warning); }
-.badge.completed, .badge.refunded { background: #e1f5e6; color: var(--color-success); }
+.badge.draft { background: var(--overlay-mid); color: var(--color-text-muted); }
+.badge.finalized, .badge.submitted, .badge.held { background: rgba(var(--color-primary-rgb), 0.16); color: var(--color-primary-text); }
+.badge.paid, .badge.approved, .badge.applied { background: rgba(var(--success-rgb), 0.16); color: var(--color-success-text); }
+.badge.void, .badge.rejected { background: rgba(var(--danger-rgb), 0.16); color: var(--color-danger-text); }
+.badge.partially_paid, .badge.partially_applied { background: rgba(var(--warning-rgb), 0.16); color: var(--color-warning-text); }
+.badge.completed, .badge.refunded { background: rgba(var(--success-rgb), 0.16); color: var(--color-success-text); }
 
-.badge.kind-invoice { background: #e3ecfb; color: var(--color-primary-dark); }
-.badge.kind-payment { background: #e1f5e6; color: var(--color-success); }
-.badge.kind-deposit { background: #eef2f7; color: var(--color-text-muted); }
-.badge.kind-refund { background: #fbe6e3; color: var(--color-danger); }
+.badge.kind-invoice { background: rgba(var(--color-primary-rgb), 0.16); color: var(--color-primary-text); }
+.badge.kind-payment { background: rgba(var(--success-rgb), 0.16); color: var(--color-success-text); }
+.badge.kind-deposit { background: var(--overlay-mid); color: var(--color-text-muted); }
+.badge.kind-refund { background: rgba(var(--danger-rgb), 0.16); color: var(--color-danger-text); }
 
 /* ---------- Forms ---------- */
 
@@ -359,7 +380,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
   font-family: inherit;
   font-size: 13.5px;
   color: var(--color-text);
-  background: var(--color-surface);
+  background: var(--color-bg);
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
 .form-row input:focus, .form-row select:focus, .form-row textarea:focus {
@@ -367,11 +388,12 @@ tbody tr:hover { background: var(--color-surface-raised); }
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--color-primary-tint);
 }
+.form-row select option { background: var(--color-surface); color: var(--color-text); }
 
 .error-banner {
-  background: #fbe6e3;
-  color: var(--color-danger);
-  border: 1px solid #f0bfb7;
+  background: rgba(var(--danger-rgb), 0.12);
+  color: var(--color-danger-text);
+  border: 1px solid rgba(var(--danger-rgb), 0.35);
   padding: 11px 15px;
   border-radius: var(--radius-sm);
   margin-bottom: 16px;
@@ -380,9 +402,9 @@ tbody tr:hover { background: var(--color-surface-raised); }
 }
 
 .success-banner {
-  background: #e1f5e6;
-  color: var(--color-success);
-  border: 1px solid #b9e6c3;
+  background: rgba(var(--success-rgb), 0.12);
+  color: var(--color-success-text);
+  border: 1px solid rgba(var(--success-rgb), 0.35);
   padding: 11px 15px;
   border-radius: var(--radius-sm);
   margin-bottom: 16px;
@@ -391,6 +413,9 @@ tbody tr:hover { background: var(--color-surface-raised); }
 }
 
 /* ---------- Login page ---------- */
+/* Deliberately dark regardless of anything else — there's only one theme
+   in this app, but the login page would stay dark even with a switcher
+   (matches store ERP's convention: no user preference exists pre-login). */
 
 .login-shell {
   display: flex;
@@ -405,7 +430,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
   flex-direction: column;
   justify-content: center;
   padding: 64px;
-  background: linear-gradient(135deg, #0b1c33 0%, #10233f 45%, #1a5fb4 120%);
+  background: linear-gradient(135deg, #16181a 0%, #1d3a6e 50%, #16181a 100%);
   color: #eaf1fb;
   overflow: hidden;
 }
@@ -418,7 +443,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
   pointer-events: none;
   animation: login-float 9s ease-in-out infinite;
 }
-.login-visual .orb-1 { width: 320px; height: 320px; background: #3b82f6; top: -80px; left: -60px; }
+.login-visual .orb-1 { width: 320px; height: 320px; background: #2563eb; top: -80px; left: -60px; }
 .login-visual .orb-2 { width: 260px; height: 260px; background: #60a5fa; bottom: -60px; right: -40px; animation-delay: -4s; }
 
 @keyframes login-float {
@@ -533,7 +558,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
 }
 .login-card .card-logo .brand-name { font-weight: 700; font-size: 15px; color: var(--color-text); }
 
-.login-card h2 { font-size: 24px; margin: 0 0 6px 0; }
+.login-card h2 { font-size: 24px; margin: 0 0 6px 0; color: var(--color-text); }
 .login-card p.subtitle { font-size: 13px; color: var(--color-text-muted); margin: 0 0 28px 0; }
 
 .input-group { position: relative; }
@@ -555,7 +580,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
 }
 .input-group input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(26, 95, 180, 0.14);
+  box-shadow: 0 0 0 3px var(--color-primary-tint);
   outline: none;
 }
 .toggle-password {
@@ -573,7 +598,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
 }
 .toggle-password svg { width: 16px; height: 16px; }
 .toggle-password:hover { color: var(--color-text); }
-.toggle-password.is-visible { color: var(--color-primary); }
+.toggle-password.is-visible { color: var(--color-primary-text); }
 
 .btn-login {
   width: 100%;
@@ -587,10 +612,10 @@ tbody tr:hover { background: var(--color-surface-raised); }
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(26, 95, 180, 0.32);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
-.btn-login:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(26, 95, 180, 0.4); }
+.btn-login:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45); }
 .btn-login:active { transform: translateY(0); }
 .btn-login:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
 
@@ -616,7 +641,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
   height: 44px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #fff;
+  background: transparent;
   color: var(--color-text);
   font-family: inherit;
   font-size: 14px;
@@ -624,7 +649,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
-.btn-demo:hover { background: rgba(26, 95, 180, 0.06); border-color: var(--color-primary); transform: translateY(-1px); }
+.btn-demo:hover { background: var(--color-primary-tint); border-color: var(--color-primary); color: var(--color-primary-text); transform: translateY(-1px); }
 .btn-demo:active { transform: translateY(0); }
 .btn-demo:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
 
@@ -651,7 +676,9 @@ tbody tr:hover { background: var(--color-surface-raised); }
    invoice doesn't include the sidebar, buttons, or unrelated page content.
    .print-doc marks a printable container on a page that has more than one
    (e.g. invoice vs. receipt) — a script toggles .print-only onto whichever
-   one should print, but both stay hidden on screen either way. */
+   one should print, but both stay hidden on screen either way. Deliberately
+   NOT themed — paper always prints light-on-white regardless of the app's
+   dark theme, so every color below is a hardcoded literal, not a token. */
 .print-only, .print-doc { display: none; }
 
 @media print {
@@ -668,7 +695,7 @@ tbody tr:hover { background: var(--color-surface-raised); }
     background: #fff;
   }
   .print-only table { width: 100%; border-collapse: collapse; }
-  .print-only th, .print-only td { border-bottom: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+  .print-only th, .print-only td { border-bottom: 1px solid #ccc; padding: 6px 8px; text-align: left; color: #000; background: transparent; }
   .print-only .print-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
   .print-only .print-header h1 { font-size: 20px; margin: 0 0 4px 0; }
   .print-only .print-totals { margin-top: 16px; width: 300px; margin-left: auto; }
