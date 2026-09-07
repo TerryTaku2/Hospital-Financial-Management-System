@@ -20,6 +20,8 @@ class ChargeItem(Base, TimestampMixin):
     currency_code: Mapped[str] = mapped_column(String(3), ForeignKey("currencies.code"), nullable=False)
     revenue_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    quantity_on_hand: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0"))
+    reorder_level: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
 
 
 class Invoice(Base, TimestampMixin):

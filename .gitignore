@@ -4,6 +4,7 @@ __pycache__/
 backend/.venv/
 backend/*.db
 backend/.env
+backend/*.log
 
 # Node (if ever added)
 node_modules/

@@ -6,6 +6,7 @@ from app.models.currency import Currency, ExchangeRate
 from app.models.encounter import Encounter
 from app.models.insurance import Claim, ClaimLine, MedicalAidProvider, PatientCover
 from app.models.patient import Patient
+from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier, SupplierPayment
 from app.models.user import User
 
 __all__ = [
@@ -28,5 +29,9 @@ __all__ = [
     "MedicalAidProvider",
     "PatientCover",
     "Patient",
+    "PurchaseOrder",
+    "PurchaseOrderLine",
+    "Supplier",
+    "SupplierPayment",
     "User",
 ]

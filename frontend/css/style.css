@@ -100,6 +100,53 @@ a { color: var(--color-primary); }
 .stat-tile .label { font-size: 12px; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .03em; }
 .stat-tile .value { font-size: 26px; font-weight: 700; margin-top: 4px; }
 
+/* Charts — inline SVG, no library. See frontend/js/charts.js. */
+:root {
+  --chart-series-1: var(--color-primary);
+  --chart-surface: var(--color-surface);
+  --chart-ink: var(--color-text);
+  --chart-ink-secondary: var(--color-text-muted);
+  --chart-grid: #eceff2;
+  --chart-baseline: var(--color-border);
+}
+
+.chart-card .card-subtitle { font-size: 12px; color: var(--color-text-muted); margin: -8px 0 12px 0; }
+.chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+.chart-gridline { stroke: var(--chart-grid); stroke-width: 1; }
+.chart-axis-label { font-size: 10px; fill: var(--chart-ink-secondary); }
+
+.chart-area { fill: var(--chart-series-1); opacity: 0.1; stroke: none; }
+.chart-line { fill: none; stroke: var(--chart-series-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart-end-dot { fill: var(--chart-series-1); stroke: var(--chart-surface); stroke-width: 2; }
+.chart-end-label { font-size: 12px; font-weight: 600; fill: var(--chart-ink); }
+
+.chart-crosshair { stroke: var(--chart-ink-secondary); stroke-width: 1; pointer-events: none; }
+.chart-crosshair-dot { fill: var(--chart-series-1); stroke: var(--chart-surface); stroke-width: 2; pointer-events: none; }
+
+.chart-hit { cursor: pointer; }
+
+.chart-bar-label { font-size: 12px; fill: var(--chart-ink); }
+.chart-bar-value { font-size: 12px; fill: var(--chart-ink-secondary); dominant-baseline: middle; }
+.chart-bar-track { fill: var(--chart-grid); }
+.chart-bar { transition: opacity 0.1s ease; }
+.chart-bar-hover { opacity: 0.8; }
+
+.chart-empty { padding: 32px 0; text-align: center; color: var(--color-text-muted); font-size: 13px; }
+
+.chart-tooltip {
+  position: fixed;
+  z-index: 1000;
+  background: #10233f;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}
+
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
 th { color: var(--color-text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }

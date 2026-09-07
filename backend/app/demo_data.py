@@ -34,15 +34,18 @@ from app.models.encounter import Encounter
 from app.models.enums import JournalSourceType, PayerType, PaymentMethod, RoleEnum
 from app.models.insurance import Claim, ClaimLine, MedicalAidProvider, PatientCover
 from app.models.patient import Patient
+from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier, SupplierPayment
 from app.models.user import User
 from app.schemas.billing import DepositApply, DepositCreate, InvoiceCreate, InvoiceLineIn, PaymentCreate, RefundCreate
 from app.schemas.insurance import ClaimCreate, ClaimDecision
+from app.schemas.procurement import PurchaseOrderCreate, PurchaseOrderLineIn, SupplierPaymentCreate
 from app.security import hash_password
 from app.seed import seed_core
 from app.services.billing_service import create_invoice, finalize_invoice, void_invoice
 from app.services.claims_service import create_claim, decide_claim, submit_claim
 from app.services.deposit_service import apply_deposit, refund_deposit, take_deposit
 from app.services.payment_service import record_payment
+from app.services.procurement_service import create_purchase_order, receive_purchase_order, record_supplier_payment
 
 DEMO_PASSWORD = "Demo1234!"
 RNG_SEED = 42
@@ -83,16 +86,22 @@ CHARGE_TEMPLATES = [
 VOID_REASONS = ["Billed in error — duplicate invoice", "Patient declined services after billing"]
 MEMBERSHIP_PLANS = ["Standard Plan", "Executive Plan", "Family Plan"]
 
+SUPPLIER_DEFS = [
+    ("MEDPHARM", "MedPharm Distributors", "+263 77 200 1000"),
+    ("NATPHARM", "National Pharmaceutical Company", "+263 71 300 2000"),
+]
+
 
 async def _reset_all(db: AsyncSession) -> None:
     """Deletes every row of business data, in FK-safe (children-first) order."""
     for model in [
         ClaimLine, Claim,
         InvoiceLine, Refund, Payment, Deposit, Invoice,
+        PurchaseOrderLine, SupplierPayment, PurchaseOrder,
         Encounter, PatientCover, Patient,
         AuditLog, ChargeItem,
         JournalLine, JournalEntry,
-        MedicalAidProvider,
+        MedicalAidProvider, Supplier,
         User, Branch,
         Account, ExchangeRate, Currency,
     ]:
@@ -314,6 +323,62 @@ async def _ensure_charge_items(db: AsyncSession, branch: Branch, account_ids: di
     return items
 
 
+async def _ensure_supplier(db: AsyncSession, code: str, name: str, contact_info: str) -> Supplier:
+    supplier = Supplier(code=code, name=name, contact_info=contact_info)
+    db.add(supplier)
+    await db.flush()
+    return supplier
+
+
+async def _stock_branch_pharmacy(
+    db: AsyncSession, rng: random.Random, *, branch: Branch, cashier: User, accountant: User,
+    suppliers: list[Supplier], charge_items: list[ChargeItem], pay_state: str,
+) -> None:
+    """Places one purchase order covering every pharmacy item at this branch
+    and receives it, so pharmacy stock starts positive instead of the demo
+    billing below driving it negative — and so the new Suppliers/Purchase
+    Orders feature has real data the moment someone logs into the demo."""
+    pharmacy_items = [item for item in charge_items if item.category == "Pharmacy"]
+    if not pharmacy_items:
+        return
+
+    supplier = rng.choice(suppliers)
+    po_dt = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS + rng.randint(1, 5))
+    po = await create_purchase_order(
+        db,
+        PurchaseOrderCreate(
+            branch_id=branch.id,
+            supplier_id=supplier.id,
+            currency_code="USD",
+            lines=[
+                PurchaseOrderLineIn(charge_item_id=item.id, quantity=Decimal(rng.randint(300, 600)), unit_cost=(item.default_price * Decimal("0.4")).quantize(Decimal("0.01")))
+                for item in pharmacy_items
+            ],
+        ),
+        cashier,
+    )
+    po.created_at = po_dt
+    po.updated_at = po_dt
+
+    po = await receive_purchase_order(db, po, accountant)
+    await _backdate_journal(db, JournalSourceType.PURCHASE_ORDER, po.id, po_dt)
+
+    if pay_state == "unpaid":
+        return
+
+    pay_amount = po.total if pay_state == "paid" else (po.total * Decimal("0.5")).quantize(Decimal("0.01"))
+    pay_dt = po_dt + timedelta(days=rng.randint(1, 4))
+    payment, _ = await record_supplier_payment(
+        db,
+        SupplierPaymentCreate(branch_id=branch.id, purchase_order_id=po.id, method=PaymentMethod.EFT, currency_code="USD", amount=pay_amount),
+        accountant,
+        idempotency_key=f"demo-supplier-pay-{po.id}",
+    )
+    payment.created_at = pay_dt
+    payment.updated_at = pay_dt
+    await _backdate_journal(db, JournalSourceType.SUPPLIER_PAYMENT, payment.id, pay_dt)
+
+
 async def ensure_demo_data(db: AsyncSession) -> User:
     """Wipes the database and regenerates a fresh demo dataset. Returns the
     admin user to log in as."""
@@ -325,13 +390,24 @@ async def ensure_demo_data(db: AsyncSession) -> User:
     account_rows = (await db.execute(select(Account.code, Account.id).where(Account.code.in_(["4000", "4010", "4020", "4030"])))).all()
     account_ids = {code: acc_id for code, acc_id in account_rows}
     providers = list((await db.execute(select(MedicalAidProvider))).scalars().all())
+    suppliers = [await _ensure_supplier(db, code, name, contact) for code, name, contact in SUPPLIER_DEFS]
+    await db.commit()
 
-    for code, name, address, patient_count in BRANCH_DEFS:
+    pay_states = ["paid", "partially_paid", "unpaid"]
+
+    for branch_index, (code, name, address, patient_count) in enumerate(BRANCH_DEFS):
         branch = await _ensure_branch(db, code, name, address)
         slug = code.lower()
         cashier = await _ensure_user(db, branch_id=branch.id, username=f"cashier.{slug}", full_name=f"Cashier — {name}", role=RoleEnum.CASHIER)
         accountant = await _ensure_user(db, branch_id=branch.id, username=f"accountant.{slug}", full_name=f"Accountant — {name}", role=RoleEnum.ACCOUNTANT)
         charge_items = await _ensure_charge_items(db, branch, account_ids)
+        await db.commit()
+
+        await _stock_branch_pharmacy(
+            db, rng, branch=branch, cashier=cashier, accountant=accountant, suppliers=suppliers,
+            charge_items=charge_items, pay_state=pay_states[branch_index % len(pay_states)],
+        )
+        await db.commit()
 
         for i in range(patient_count):
             patient = _random_patient(rng, branch.id)

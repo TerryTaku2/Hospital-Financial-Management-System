@@ -17,6 +17,8 @@ from app.schemas.reports import (
     DailyTransactionsSummary,
     IncomeStatementLine,
     IncomeStatementOut,
+    RevenueTrendOut,
+    RevenueTrendPoint,
     TrialBalanceLine,
     TrialBalanceOut,
 )
@@ -152,6 +154,33 @@ async def ar_aging(db: AsyncSession, branch_id: int | None = None) -> ArAgingOut
     ]
     grand_total = sum((row.total_outstanding for row in rows), Decimal("0"))
     return ArAgingOut(rows=rows, grand_total=grand_total)
+
+
+async def revenue_trend(db: AsyncSession, days: int = 90, branch_id: int | None = None) -> RevenueTrendOut:
+    """Net revenue (income account credits minus debits) posted per day over
+    the trailing `days` days, for the dashboard trend chart."""
+    start_date = datetime.now(timezone.utc).date() - timedelta(days=days - 1)
+    stmt = (
+        select(
+            JournalEntry.entry_date,
+            func.coalesce(func.sum(JournalLine.base_amount_credit - JournalLine.base_amount_debit), 0).label("revenue"),
+        )
+        .join(JournalLine, JournalLine.journal_entry_id == JournalEntry.id)
+        .join(Account, Account.id == JournalLine.account_id)
+        .where(JournalEntry.is_posted.is_(True), Account.type == AccountType.INCOME, JournalEntry.entry_date >= start_date)
+    )
+    if branch_id is not None:
+        stmt = stmt.where(JournalEntry.branch_id == branch_id)
+    stmt = stmt.group_by(JournalEntry.entry_date).order_by(JournalEntry.entry_date)
+
+    rows = (await db.execute(stmt)).all()
+    by_date = {row.entry_date: Decimal(row.revenue) for row in rows}
+
+    points = [
+        RevenueTrendPoint(period=start_date + timedelta(days=offset), revenue=by_date.get(start_date + timedelta(days=offset), Decimal("0")))
+        for offset in range(days)
+    ]
+    return RevenueTrendOut(points=points)
 
 
 def _add_amount(totals: dict[str, Decimal], currency_code: str, amount: Decimal) -> None:

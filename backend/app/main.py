@@ -22,7 +22,9 @@ from app.routers import (
     medical_aid_providers,
     patients,
     payments,
+    purchase_orders,
     reports,
+    suppliers,
     users,
 )
 
@@ -50,6 +52,8 @@ app.include_router(invoices.router)
 app.include_router(payments.router)
 app.include_router(deposits.router)
 app.include_router(claims.router)
+app.include_router(suppliers.router)
+app.include_router(purchase_orders.router)
 app.include_router(reports.router)
 app.include_router(audit_logs.router)
 

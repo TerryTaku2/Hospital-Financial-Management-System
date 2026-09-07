@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.branch_scope import BranchScope, get_branch_scope
 from app.database import get_db
-from app.schemas.reports import ArAgingOut, DailyTransactionsOut, IncomeStatementOut, TrialBalanceOut
+from app.schemas.reports import ArAgingOut, DailyTransactionsOut, IncomeStatementOut, RevenueTrendOut, TrialBalanceOut
 from app.services import reporting_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -30,6 +30,13 @@ async def ar_aging(
     branch_id: int | None = None, db: AsyncSession = Depends(get_db), scope: BranchScope = Depends(get_branch_scope)
 ) -> ArAgingOut:
     return await reporting_service.ar_aging(db, scope.resolve_list_filter(branch_id))
+
+
+@router.get("/revenue-trend", response_model=RevenueTrendOut)
+async def revenue_trend(
+    days: int = 90, branch_id: int | None = None, db: AsyncSession = Depends(get_db), scope: BranchScope = Depends(get_branch_scope)
+) -> RevenueTrendOut:
+    return await reporting_service.revenue_trend(db, days=days, branch_id=scope.resolve_list_filter(branch_id))
 
 
 @router.get("/daily-transactions", response_model=DailyTransactionsOut)

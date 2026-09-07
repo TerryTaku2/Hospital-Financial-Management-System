@@ -1,0 +1,156 @@
+<title>Purchase Order — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2 id="po-title">Loading…</h2>
+        <div id="po-status"></div>
+      </div>
+      <p class="text-muted" id="po-meta"></p>
+      <div id="po-actions"></div>
+    </div>
+
+    <div class="card">
+      <h2>Line items</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>Qty</th><th>Unit cost</th><th>Amount</th></tr></thead>
+          <tbody id="lines-body"></tbody>
+        </table>
+      </div>
+      <p class="text-right"><strong>Total: <span id="po-total"></span></strong></p>
+    </div>
+
+    <div class="card" id="payment-card">
+      <h2>Pay supplier</h2>
+      <form id="payment-form" class="grid grid-3">
+        <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="pay_amount" required /></div>
+        <div class="form-row"><label>Method</label>
+          <select id="pay_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
+        </div>
+        <div><button class="btn" type="submit">Record payment</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Payments</h2>
+      <div class="table-scroll">
+        <table><thead><tr><th>Method</th><th>Amount</th></tr></thead><tbody id="payments-body"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  const poId = new URLSearchParams(window.location.search).get("id");
+  let currentUser = null;
+  let po = null;
+  let supplierName = "";
+
+  function renderActions() {
+    const canManage = ["admin", "cashier", "accountant"].includes(currentUser.role);
+    const canPay = ["admin", "accountant"].includes(currentUser.role);
+    const actions = [];
+    if (po.status === "draft" && canManage) {
+      actions.push(`<button class="btn" id="receive-btn">Receive goods</button>`);
+      actions.push(`<button class="btn danger" id="cancel-btn">Cancel</button>`);
+    }
+    document.getElementById("po-actions").innerHTML = actions.join(" ");
+
+    const receiveBtn = document.getElementById("receive-btn");
+    if (receiveBtn) receiveBtn.addEventListener("click", receivePO);
+    const cancelBtn = document.getElementById("cancel-btn");
+    if (cancelBtn) cancelBtn.addEventListener("click", cancelPO);
+
+    document.getElementById("payment-card").style.display =
+      ["received", "partially_paid"].includes(po.status) && canPay ? "block" : "none";
+  }
+
+  async function load() {
+    po = await api.get(`/purchase-orders/${poId}`);
+    const suppliers = await api.get("/suppliers");
+    const supplier = suppliers.find((s) => s.id === po.supplier_id);
+    supplierName = supplier ? supplier.name : `#${po.supplier_id}`;
+
+    document.getElementById("po-title").textContent = po.po_number;
+    document.getElementById("po-status").innerHTML = statusBadge(po.status);
+    document.getElementById("po-meta").textContent = `Supplier: ${supplierName} · ${po.currency_code}`;
+    document.getElementById("lines-body").innerHTML = po.lines
+      .map((l) => `<tr><td>${escapeHtml(l.description)}</td><td>${l.quantity}</td><td>${formatMoney(l.unit_cost, "")}</td><td>${formatMoney(l.amount, "")}</td></tr>`)
+      .join("");
+    document.getElementById("po-total").textContent =
+      `${formatMoney(po.total, po.currency_code)} (paid ${formatMoney(po.amount_paid, po.currency_code)})`;
+    renderActions();
+
+    const payments = await api.get(`/purchase-orders/${poId}/payments`);
+    document.getElementById("payments-body").innerHTML = payments
+      .map((p) => `<tr><td>${p.method}</td><td>${formatMoney(p.amount, p.currency_code)}</td></tr>`)
+      .join("");
+  }
+
+  async function receivePO() {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/purchase-orders/${poId}/receive`, {});
+      await load();
+      alerts.innerHTML = `<div class="success-banner">Goods received — stock updated and posted to the general ledger.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not receive purchase order")}</div>`;
+    }
+  }
+
+  async function cancelPO() {
+    const reason = window.prompt("Reason for cancelling this purchase order:");
+    if (!reason) return;
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/purchase-orders/${poId}/cancel`, { reason });
+      await load();
+      alerts.innerHTML = `<div class="success-banner">Purchase order cancelled.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not cancel purchase order")}</div>`;
+    }
+  }
+
+  (async () => {
+    currentUser = await initPage("Purchase Order Detail");
+    if (!currentUser) return;
+    await load();
+
+    document.getElementById("payment-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post(
+          `/purchase-orders/${poId}/pay`,
+          {
+            branch_id: currentUser.branch_id,
+            purchase_order_id: Number(poId),
+            method: document.getElementById("pay_method").value,
+            currency_code: po.currency_code,
+            amount: Number(document.getElementById("pay_amount").value),
+          },
+          { "Idempotency-Key": newIdempotencyKey() }
+        );
+        e.target.reset();
+        await load();
+        alerts.innerHTML = `<div class="success-banner">Payment recorded.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not record payment")}</div>`;
+      }
+    });
+  })();
+</script>

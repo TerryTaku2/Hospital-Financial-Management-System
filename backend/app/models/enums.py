@@ -62,12 +62,22 @@ class ClaimStatus(str, enum.Enum):
     PAID = "paid"
 
 
+class PurchaseOrderStatus(str, enum.Enum):
+    DRAFT = "draft"
+    RECEIVED = "received"
+    PARTIALLY_PAID = "partially_paid"
+    PAID = "paid"
+    CANCELLED = "cancelled"
+
+
 class JournalSourceType(str, enum.Enum):
     INVOICE = "invoice"
     PAYMENT = "payment"
     DEPOSIT = "deposit"
     DEPOSIT_APPLICATION = "deposit_application"
     REFUND = "refund"
+    PURCHASE_ORDER = "purchase_order"
+    SUPPLIER_PAYMENT = "supplier_payment"
     MANUAL = "manual"
 
 

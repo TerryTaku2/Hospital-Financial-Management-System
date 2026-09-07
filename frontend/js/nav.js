@@ -8,7 +8,11 @@ const NAV_ITEMS = [
   { href: "/deposits.html", label: "Deposits", roles: ["admin", "cashier", "accountant"], section: "Front Desk" },
   { href: "/claims.html", label: "Medical Aid Claims", roles: ["admin", "cashier", "accountant"], section: "Front Desk" },
 
+  { href: "/suppliers.html", label: "Suppliers", roles: ["admin", "cashier", "accountant", "auditor"], section: "Pharmacy" },
+  { href: "/purchase-orders.html", label: "Purchase Orders", roles: ["admin", "cashier", "accountant", "auditor"], section: "Pharmacy" },
+
   { href: "/accounts.html", label: "Chart of Accounts", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
+  { href: "/charge-items.html", label: "Charge Items", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
   { href: "/journal.html", label: "Journal Entries", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
 
   { href: "/trial-balance.html", label: "Trial Balance", roles: ["admin", "accountant", "auditor"], section: "Reports" },

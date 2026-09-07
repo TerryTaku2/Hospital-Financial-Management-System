@@ -14,11 +14,13 @@ class ChargeItemCreate(BaseModel):
     default_price: Decimal
     currency_code: str
     revenue_account_id: int
+    reorder_level: Decimal | None = None
 
 
 class ChargeItemOut(ChargeItemCreate):
     id: int
     is_active: bool
+    quantity_on_hand: Decimal
 
     model_config = {"from_attributes": True}
 

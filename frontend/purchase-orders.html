@@ -1,0 +1,157 @@
+<title>Purchase Orders — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>Pharmacy stock</h2>
+      <p class="text-muted" style="margin-top:-8px">Current branch. Items at or below reorder level are flagged.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>On hand</th><th>Reorder level</th><th></th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="create-po-card">
+      <h2>New purchase order</h2>
+      <form id="po-form">
+        <div class="grid grid-3">
+          <div class="form-row"><label>Supplier</label><select id="po_supplier" required></select></div>
+          <div class="form-row"><label>Currency</label>
+            <select id="po_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+          </div>
+        </div>
+
+        <h2>Line items</h2>
+        <div id="lines-container"></div>
+        <button type="button" class="btn secondary" id="add-line">+ Add line</button>
+
+        <div class="mt-16">
+          <button class="btn" type="submit">Create draft purchase order</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Purchase orders</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>PO #</th><th>Supplier</th><th>Currency</th><th>Total</th><th>Status</th><th></th></tr></thead>
+          <tbody id="pos-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+  let pharmacyItems = [];
+  let suppliers = [];
+
+  async function loadStock() {
+    const items = await api.get(`/charge-items?branch_id=${currentUser.branch_id}`);
+    pharmacyItems = items.filter((i) => i.category === "Pharmacy");
+    document.getElementById("stock-body").innerHTML = pharmacyItems
+      .map((i) => {
+        const low = i.reorder_level != null && Number(i.quantity_on_hand) <= Number(i.reorder_level);
+        return `<tr><td>${escapeHtml(i.name)}</td><td>${i.quantity_on_hand}</td>
+          <td>${i.reorder_level != null ? i.reorder_level : "—"}</td>
+          <td>${low ? '<span class="badge void">Reorder</span>' : ""}</td></tr>`;
+      })
+      .join("");
+  }
+
+  function addLineRow() {
+    const container = document.getElementById("lines-container");
+    const row = document.createElement("div");
+    row.className = "grid grid-3 line-row";
+    row.innerHTML = `
+      <div class="form-row">
+        <label>Item</label>
+        <select class="line-item" required>
+          ${pharmacyItems.map((i) => `<option value="${i.id}">${escapeHtml(i.name)} (on hand: ${i.quantity_on_hand})</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-row"><label>Quantity</label><input type="number" class="line-qty" value="1" min="0.01" step="0.01" required /></div>
+      <div class="form-row"><label>Unit cost</label><input type="number" class="line-cost" step="0.01" min="0" required /></div>
+      <div><button type="button" class="btn secondary remove-line">Remove</button></div>
+    `;
+    row.querySelector(".remove-line").addEventListener("click", () => row.remove());
+    container.appendChild(row);
+  }
+
+  async function loadPurchaseOrders() {
+    const pos = await api.get("/purchase-orders");
+    document.getElementById("pos-body").innerHTML = pos
+      .map((po) => {
+        const supplier = suppliers.find((s) => s.id === po.supplier_id);
+        return `<tr>
+          <td><a href="/purchase-order-detail.html?id=${po.id}">${po.po_number}</a></td>
+          <td>${supplier ? escapeHtml(supplier.name) : "#" + po.supplier_id}</td>
+          <td>${po.currency_code}</td>
+          <td>${formatMoney(po.total, "")}</td>
+          <td>${statusBadge(po.status)}</td>
+          <td><a href="/purchase-order-detail.html?id=${po.id}">Open</a></td>
+        </tr>`;
+      })
+      .join("");
+  }
+
+  (async () => {
+    currentUser = await initPage("Purchase Orders");
+    if (!currentUser) return;
+    if (!["admin", "cashier", "accountant"].includes(currentUser.role)) {
+      document.getElementById("create-po-card").style.display = "none";
+    }
+
+    suppliers = await api.get("/suppliers");
+    document.getElementById("po_supplier").innerHTML = suppliers
+      .map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`)
+      .join("");
+
+    await loadStock();
+    if (pharmacyItems.length === 0) {
+      document.getElementById("po-form").innerHTML =
+        `<p class="text-muted">No pharmacy charge items exist for this branch yet — <a href="/charge-items.html">add one</a> first.</p>`;
+    } else {
+      addLineRow();
+      document.getElementById("add-line").addEventListener("click", addLineRow);
+    }
+    await loadPurchaseOrders();
+
+    document.getElementById("po-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+
+      const lines = Array.from(document.querySelectorAll(".line-row")).map((row) => ({
+        charge_item_id: Number(row.querySelector(".line-item").value),
+        quantity: Number(row.querySelector(".line-qty").value),
+        unit_cost: Number(row.querySelector(".line-cost").value),
+      }));
+      try {
+        const po = await api.post("/purchase-orders", {
+          branch_id: currentUser.branch_id,
+          supplier_id: Number(document.getElementById("po_supplier").value),
+          currency_code: document.getElementById("po_currency").value,
+          lines,
+        });
+        alerts.innerHTML = `<div class="success-banner">Draft purchase order ${po.po_number} created. <a href="/purchase-order-detail.html?id=${po.id}">Open it</a> to receive the goods.</div>`;
+        await loadPurchaseOrders();
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create purchase order")}</div>`;
+      }
+    });
+  })();
+</script>

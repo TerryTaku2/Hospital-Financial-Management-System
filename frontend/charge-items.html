@@ -1,0 +1,115 @@
+<title>Charge Items — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card" id="create-card">
+      <h2>New charge item</h2>
+      <form id="item-form" class="grid grid-3">
+        <div class="form-row"><label>Code</label><input id="ci_code" required /></div>
+        <div class="form-row"><label>Name</label><input id="ci_name" required /></div>
+        <div class="form-row"><label>Category</label>
+          <select id="ci_category">
+            <option value="Consultation">Consultation</option>
+            <option value="Pharmacy">Pharmacy</option>
+            <option value="Procedure">Procedure</option>
+            <option value="Laboratory">Laboratory</option>
+            <option value="Imaging">Imaging</option>
+            <option value="Ward/Bed Fees">Ward/Bed Fees</option>
+            <option value="Maternity">Maternity</option>
+          </select>
+        </div>
+        <div class="form-row"><label>Default price</label><input type="number" id="ci_price" step="0.01" min="0" required /></div>
+        <div class="form-row"><label>Currency</label>
+          <select id="ci_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+        </div>
+        <div class="form-row"><label>Revenue account</label><select id="ci_account" required></select></div>
+        <div class="form-row" id="reorder-row" style="display:none">
+          <label>Reorder level <span class="text-muted">(pharmacy stock alert threshold)</span></label>
+          <input type="number" id="ci_reorder" step="0.01" min="0" />
+        </div>
+        <div><button class="btn" type="submit">Create charge item</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Charge items</h2>
+      <p class="text-muted" style="margin-top:-8px">Current branch. The price list invoices and purchase orders are built from.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Price</th><th>On hand</th><th>Reorder level</th></tr></thead>
+          <tbody id="items-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+
+  async function loadItems() {
+    const items = await api.get(`/charge-items?branch_id=${currentUser.branch_id}`);
+    document.getElementById("items-body").innerHTML = items
+      .map(
+        (i) => `<tr><td>${escapeHtml(i.code)}</td><td>${escapeHtml(i.name)}</td><td>${escapeHtml(i.category)}</td>
+          <td>${formatMoney(i.default_price, i.currency_code)}</td>
+          <td>${i.category === "Pharmacy" ? i.quantity_on_hand : "—"}</td>
+          <td>${i.reorder_level != null ? i.reorder_level : "—"}</td></tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    currentUser = await initPage("Charge Items");
+    if (!currentUser) return;
+    if (!["admin", "accountant"].includes(currentUser.role)) {
+      document.getElementById("create-card").style.display = "none";
+    }
+
+    const accounts = await api.get("/accounts");
+    const revenueAccounts = accounts.filter((a) => a.type === "income");
+    document.getElementById("ci_account").innerHTML = revenueAccounts
+      .map((a) => `<option value="${a.id}">${a.code} — ${escapeHtml(a.name)}</option>`)
+      .join("");
+
+    document.getElementById("ci_category").addEventListener("change", (e) => {
+      document.getElementById("reorder-row").style.display = e.target.value === "Pharmacy" ? "block" : "none";
+    });
+
+    await loadItems();
+
+    document.getElementById("item-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      const reorderInput = document.getElementById("ci_reorder").value;
+      try {
+        await api.post("/charge-items", {
+          branch_id: currentUser.branch_id,
+          code: document.getElementById("ci_code").value,
+          name: document.getElementById("ci_name").value,
+          category: document.getElementById("ci_category").value,
+          default_price: Number(document.getElementById("ci_price").value),
+          currency_code: document.getElementById("ci_currency").value,
+          revenue_account_id: Number(document.getElementById("ci_account").value),
+          reorder_level: reorderInput ? Number(reorderInput) : null,
+        });
+        e.target.reset();
+        document.getElementById("reorder-row").style.display = "none";
+        await loadItems();
+        alerts.innerHTML = `<div class="success-banner">Charge item created.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create charge item")}</div>`;
+      }
+    });
+  })();
+</script>

@@ -76,3 +76,12 @@ class DailyTransactionsOut(BaseModel):
     transaction_date: date
     rows: list[DailyTransactionRow]
     summary: DailyTransactionsSummary
+
+
+class RevenueTrendPoint(BaseModel):
+    period: date
+    revenue: Decimal
+
+
+class RevenueTrendOut(BaseModel):
+    points: list[RevenueTrendPoint]

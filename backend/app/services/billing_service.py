@@ -25,6 +25,18 @@ async def _revenue_account_id_for_line(db: AsyncSession, line: InvoiceLine) -> i
     return charge_item.revenue_account_id
 
 
+async def _adjust_pharmacy_stock(db: AsyncSession, invoice: Invoice, sign: int) -> None:
+    """Dispensing a pharmacy line moves stock; voiding a finalized invoice
+    puts it back. Soft tracking — never blocks billing on low/negative
+    stock, it's informational (see reorder_level on ChargeItem)."""
+    for line in invoice.lines:
+        if line.charge_item_id is None:
+            continue
+        charge_item = await db.get(ChargeItem, line.charge_item_id)
+        if charge_item.category == "Pharmacy":
+            charge_item.quantity_on_hand += sign * line.quantity
+
+
 async def create_invoice(db: AsyncSession, invoice_in: InvoiceCreate, user: User) -> Invoice:
     if not invoice_in.lines:
         raise PostingError("An invoice needs at least one line")
@@ -127,6 +139,7 @@ async def finalize_invoice(db: AsyncSession, invoice: Invoice, user: User) -> In
         created_by_id=user.id,
         lines=lines,
     )
+    await _adjust_pharmacy_stock(db, invoice, sign=-1)
 
     before_status = invoice.status
     invoice.status = InvoiceStatus.FINALIZED
@@ -174,6 +187,7 @@ async def void_invoice(db: AsyncSession, invoice: Invoice, user: User, reason: s
             created_by_id=user.id,
             lines=reversal_lines,
         )
+        await _adjust_pharmacy_stock(db, invoice, sign=1)
 
     await write_audit_log(
         db,

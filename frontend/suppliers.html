@@ -1,0 +1,74 @@
+<title>Suppliers — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card" id="create-supplier-card">
+      <h2>New supplier</h2>
+      <form id="supplier-form" class="grid grid-3">
+        <div class="form-row"><label>Code</label><input id="s_code" required /></div>
+        <div class="form-row"><label>Name</label><input id="s_name" required /></div>
+        <div class="form-row"><label>Contact info</label><input id="s_contact" placeholder="Phone / email / address" /></div>
+        <div><button class="btn" type="submit">Create supplier</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Suppliers</h2>
+      <p class="text-muted" style="margin-top:-8px">Stores the pharmacy orders stock from.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th>Contact</th><th>Active</th></tr></thead>
+          <tbody id="suppliers-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  async function loadSuppliers() {
+    const suppliers = await api.get("/suppliers");
+    document.getElementById("suppliers-body").innerHTML = suppliers
+      .map(
+        (s) => `<tr><td>${escapeHtml(s.code)}</td><td>${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(s.contact_info || "—")}</td><td>${s.is_active ? "Yes" : "No"}</td></tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    const user = await initPage("Suppliers");
+    if (!user) return;
+    if (!["admin", "accountant"].includes(user.role)) {
+      document.getElementById("create-supplier-card").style.display = "none";
+    }
+    await loadSuppliers();
+
+    document.getElementById("supplier-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post("/suppliers", {
+          code: document.getElementById("s_code").value,
+          name: document.getElementById("s_name").value,
+          contact_info: document.getElementById("s_contact").value || null,
+        });
+        e.target.reset();
+        await loadSuppliers();
+        alerts.innerHTML = `<div class="success-banner">Supplier created.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create supplier")}</div>`;
+      }
+    });
+  })();
+</script>
