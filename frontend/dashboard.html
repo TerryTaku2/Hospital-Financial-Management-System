@@ -21,6 +21,24 @@
         </div>
       </div>
 
+      <div class="grid grid-3">
+        <div class="card stat-tile good">
+          <div class="label">Total Revenue</div>
+          <div class="value" id="total-revenue">—</div>
+          <div class="sub">All-time, current branch scope</div>
+        </div>
+        <div class="card stat-tile bad">
+          <div class="label">Total Expenses</div>
+          <div class="value" id="total-expenses">—</div>
+          <div class="sub">All-time, current branch scope</div>
+        </div>
+        <div class="card stat-tile" id="net-income-tile">
+          <div class="label">Net Income</div>
+          <div class="value" id="net-income">—</div>
+          <div class="sub">Revenue minus expenses</div>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Quick actions</h2>
         <a class="btn" href="/billing.html">New Invoice</a>
@@ -104,6 +122,11 @@
         .map((line) => ({ label: line.account_name.replace(/^Revenue - /, ""), value: Number(line.amount) }))
         .sort((a, b) => b.value - a.value);
       renderBarChart(document.getElementById("chart-revenue-category"), rows);
+
+      document.getElementById("total-revenue").textContent = formatMoney(income.total_income, "");
+      document.getElementById("total-expenses").textContent = formatMoney(income.total_expense, "");
+      document.getElementById("net-income").textContent = formatMoney(income.net_income, "");
+      document.getElementById("net-income-tile").classList.add(Number(income.net_income) >= 0 ? "good" : "bad");
     } catch (err) {
       console.error(err);
     }
