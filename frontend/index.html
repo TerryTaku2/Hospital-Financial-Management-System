@@ -79,6 +79,10 @@
         </button>
       </form>
 
+      <div class="login-divider">or</div>
+
+      <button class="btn-demo" type="button" id="demo-login-btn">Login to Demo Account</button>
+
       <p class="login-footer-note">Secure staff access · Hospital Finance</p>
     </div>
   </div>
@@ -115,6 +119,22 @@
       errorBox.innerHTML = `<div class="error-banner">${err.detail || "Login failed"}</div>`;
       loginBtn.disabled = false;
       loginBtnLabel.textContent = "Sign in";
+    }
+  });
+
+  const demoLoginBtn = document.getElementById("demo-login-btn");
+  demoLoginBtn.addEventListener("click", async () => {
+    const errorBox = document.getElementById("error-box");
+    errorBox.innerHTML = "";
+    demoLoginBtn.disabled = true;
+    demoLoginBtn.textContent = "Signing in…";
+    try {
+      await login("admin", "ChangeMe123!");
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      errorBox.innerHTML = `<div class="error-banner">${err.detail || "Demo login failed"}</div>`;
+      demoLoginBtn.disabled = false;
+      demoLoginBtn.textContent = "Login to Demo Account";
     }
   });
 
