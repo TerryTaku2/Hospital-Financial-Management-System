@@ -16,6 +16,8 @@ const NAV_ICONS = {
   alertClock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 1.5"/><path d="M9 2h6"/>',
   building: '<rect x="4" y="3" width="10" height="18" rx="1"/><rect x="14" y="9" width="6" height="12" rx="1"/><path d="M7 7h1M10 7h1M7 11h1M10 11h1M7 15h1M10 15h1"/>',
   shield: '<path d="M12 3l7 3v6c0 4.6-3 8-7 9-4-1-7-4.4-7-9V6l7-3z"/><path d="M12 8v5"/><circle cx="12" cy="16" r="0.6" fill="currentColor" stroke="none"/>',
+  box: '<path d="M3 7.5l9-4.5 9 4.5-9 4.5-9-4.5z"/><path d="M3 7.5v9l9 4.5 9-4.5v-9"/><path d="M12 12v9"/>',
+  pill: '<rect x="4" y="9" width="16" height="7.5" rx="3.75" transform="rotate(-45 12 12.75)"/><path d="M9.5 9.5l5.3 5.3" />',
 };
 
 function navIcon(key) {
@@ -32,8 +34,11 @@ const NAV_ITEMS = [
   { href: "/deposits.html", label: "Deposits", icon: "wallet", roles: ["admin", "cashier", "accountant"], section: "Front Desk" },
   { href: "/claims.html", label: "Medical Aid Claims", icon: "shieldCheck", roles: ["admin", "cashier", "accountant"], section: "Front Desk" },
 
-  { href: "/suppliers.html", label: "Suppliers", icon: "truck", roles: ["admin", "cashier", "accountant", "auditor"], section: "Pharmacy" },
-  { href: "/purchase-orders.html", label: "Purchase Orders", icon: "clipboardList", roles: ["admin", "cashier", "accountant", "auditor"], section: "Pharmacy" },
+  { href: "/stores.html", label: "Stores", icon: "box", roles: ["admin", "cashier", "accountant", "auditor"], section: "Stores" },
+  { href: "/suppliers.html", label: "Suppliers", icon: "truck", roles: ["admin", "cashier", "accountant", "auditor"], section: "Stores" },
+  { href: "/purchase-orders.html", label: "Purchase Orders", icon: "clipboardList", roles: ["admin", "cashier", "accountant", "auditor"], section: "Stores" },
+
+  { href: "/pharmacy.html", label: "Pharmacy", icon: "pill", roles: ["admin", "cashier", "accountant", "auditor"], section: "Pharmacy" },
 
   { href: "/accounts.html", label: "Chart of Accounts", icon: "book", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
   { href: "/charge-items.html", label: "Charge Items", icon: "tag", roles: ["admin", "accountant", "auditor"], section: "Accounting" },

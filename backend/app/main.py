@@ -24,6 +24,8 @@ from app.routers import (
     payments,
     purchase_orders,
     reports,
+    stock,
+    stock_requisitions,
     suppliers,
     users,
 )
@@ -54,6 +56,8 @@ app.include_router(deposits.router)
 app.include_router(claims.router)
 app.include_router(suppliers.router)
 app.include_router(purchase_orders.router)
+app.include_router(stock.router)
+app.include_router(stock_requisitions.router)
 app.include_router(reports.router)
 app.include_router(audit_logs.router)
 

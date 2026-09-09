@@ -38,10 +38,10 @@
 
     <div class="card">
       <h2>Charge items</h2>
-      <p class="text-muted" style="margin-top:-8px">Current branch. The price list invoices and purchase orders are built from.</p>
+      <p class="text-muted" style="margin-top:-8px">Current branch. The price list invoices and purchase orders are built from. Stock on hand is tracked separately — see <a href="/stores.html">Stores</a> and <a href="/pharmacy.html">Pharmacy</a>.</p>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Price</th><th>On hand</th><th>Reorder level</th></tr></thead>
+          <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Price</th><th>Reorder level</th></tr></thead>
           <tbody id="items-body"></tbody>
         </table>
       </div>
@@ -62,7 +62,6 @@
       .map(
         (i) => `<tr><td>${escapeHtml(i.code)}</td><td>${escapeHtml(i.name)}</td><td>${escapeHtml(i.category)}</td>
           <td>${formatMoney(i.default_price, i.currency_code)}</td>
-          <td>${i.category === "Pharmacy" ? i.quantity_on_hand : "—"}</td>
           <td>${i.reorder_level != null ? i.reorder_level : "—"}</td></tr>`
       )
       .join("");

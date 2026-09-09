@@ -5,6 +5,7 @@ from app.models.branch import Branch
 from app.models.currency import Currency, ExchangeRate
 from app.models.encounter import Encounter
 from app.models.insurance import Claim, ClaimLine, MedicalAidProvider, PatientCover
+from app.models.inventory import StockAdjustment, StockBalance, StockRequisition, StockRequisitionLine
 from app.models.patient import Patient
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier, SupplierPayment
 from app.models.user import User
@@ -28,6 +29,10 @@ __all__ = [
     "ClaimLine",
     "MedicalAidProvider",
     "PatientCover",
+    "StockAdjustment",
+    "StockBalance",
+    "StockRequisition",
+    "StockRequisitionLine",
     "Patient",
     "PurchaseOrder",
     "PurchaseOrderLine",

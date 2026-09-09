@@ -7,11 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import write_audit_log
 from app.models.billing import ChargeItem
-from app.models.enums import AuditAction, JournalSourceType, PurchaseOrderStatus
+from app.models.enums import AuditAction, JournalSourceType, PurchaseOrderStatus, StockLocation
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, SupplierPayment
 from app.models.user import User
 from app.schemas.procurement import PurchaseOrderCreate, SupplierPaymentCreate
-from app.services import account_lookup, coa_codes
+from app.services import account_lookup, coa_codes, inventory_service
 from app.services.posting_service import LineInput, PostingError, post_journal_entry
 
 
@@ -86,8 +86,7 @@ async def receive_purchase_order(db: AsyncSession, po: PurchaseOrder, user: User
     ap_account_id = await account_lookup.get_account_id_by_code(db, coa_codes.AP_SUPPLIERS)
 
     for line in po.lines:
-        item = await db.get(ChargeItem, line.charge_item_id)
-        item.quantity_on_hand += line.quantity
+        await inventory_service.adjust_balance(db, line.charge_item_id, StockLocation.STORE, line.quantity)
 
     await post_journal_entry(
         db,

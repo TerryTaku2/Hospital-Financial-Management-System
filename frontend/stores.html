@@ -1,0 +1,164 @@
+<title>Stores — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>Store stock</h2>
+      <p class="text-muted" style="margin-top:-8px">Current branch. Filled by receiving <a href="/purchase-orders.html">purchase orders</a> from suppliers; drawn down when Pharmacy requisitions stock. Items at or below reorder level are flagged.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>Category</th><th>On hand</th><th>Reorder level</th><th></th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="pending-card">
+      <h2>Pending requisitions from Pharmacy</h2>
+      <p class="text-muted" style="margin-top:-8px">Issuing moves stock out of Store and into Pharmacy.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Requisition #</th><th>Lines</th><th>Requested</th><th>Status</th><th></th></tr></thead>
+          <tbody id="pending-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="adjust-card">
+      <h2>Adjust stock</h2>
+      <p class="text-muted" style="margin-top:-8px">For stock counts, wastage or damage. Memo-only — no accounting entry is posted.</p>
+      <form id="adjust-form" class="grid grid-3">
+        <div class="form-row"><label>Item</label><select id="adj_item" required></select></div>
+        <div class="form-row"><label>Quantity change</label><input type="number" id="adj_qty" step="0.01" placeholder="e.g. -5 or 20" required /></div>
+        <div class="form-row"><label>Reason</label><input id="adj_reason" placeholder="e.g. Stock count correction" required /></div>
+        <div><button class="btn" type="submit">Record adjustment</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Recent adjustments</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>Location</th><th>Change</th><th>Reason</th><th>Date</th></tr></thead>
+          <tbody id="adjustments-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+  let chargeItemsById = {};
+  let canManage = false;
+
+  async function loadStock() {
+    const items = await api.get(`/charge-items?branch_id=${currentUser.branch_id}`);
+    chargeItemsById = {};
+    items.forEach((i) => { chargeItemsById[i.id] = i; });
+
+    const balances = await api.get(`/stock/balances?branch_id=${currentUser.branch_id}&location=store`);
+    document.getElementById("stock-body").innerHTML = balances
+      .map((b) => {
+        const item = chargeItemsById[b.charge_item_id];
+        if (!item) return "";
+        const low = item.reorder_level != null && Number(b.quantity_on_hand) <= Number(item.reorder_level);
+        return `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.category)}</td><td>${b.quantity_on_hand}</td>
+          <td>${item.reorder_level != null ? item.reorder_level : "—"}</td>
+          <td>${low ? '<span class="badge void">Reorder</span>' : ""}</td></tr>`;
+      })
+      .join("");
+
+    document.getElementById("adj_item").innerHTML = items
+      .map((i) => `<option value="${i.id}">${escapeHtml(i.name)} (${escapeHtml(i.category)})</option>`)
+      .join("");
+  }
+
+  async function loadRequisitions() {
+    const reqs = await api.get(`/stock-requisitions?branch_id=${currentUser.branch_id}`);
+    const pending = reqs.filter((r) => r.status === "draft");
+    document.getElementById("pending-body").innerHTML = pending
+      .map((r) => {
+        const summary = r.lines.map((l) => `${escapeHtml(l.description)} × ${l.quantity}`).join(", ");
+        const issueBtn = canManage ? `<button class="btn" data-issue="${r.id}">Issue</button>` : "";
+        return `<tr><td>${escapeHtml(r.requisition_number)}</td><td>${summary}</td>
+          <td>${new Date(r.created_at).toLocaleDateString()}</td><td>${statusBadge(r.status)}</td><td>${issueBtn}</td></tr>`;
+      })
+      .join("");
+    if (pending.length === 0) {
+      document.getElementById("pending-body").innerHTML = `<tr><td colspan="5" class="text-muted">No requisitions waiting to be issued.</td></tr>`;
+    }
+    document.querySelectorAll("[data-issue]").forEach((btn) => {
+      btn.addEventListener("click", () => issueRequisition(Number(btn.dataset.issue)));
+    });
+  }
+
+  async function issueRequisition(id) {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/stock-requisitions/${id}/issue`, {});
+      alerts.innerHTML = `<div class="success-banner">Requisition issued — stock moved to Pharmacy.</div>`;
+      await loadStock();
+      await loadRequisitions();
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not issue requisition")}</div>`;
+    }
+  }
+
+  async function loadAdjustments() {
+    const adjustments = await api.get(`/stock/adjustments?branch_id=${currentUser.branch_id}`);
+    document.getElementById("adjustments-body").innerHTML = adjustments
+      .map((a) => {
+        const item = chargeItemsById[a.charge_item_id];
+        const delta = Number(a.quantity_delta);
+        return `<tr><td>${item ? escapeHtml(item.name) : "#" + a.charge_item_id}</td><td>${a.location}</td>
+          <td>${delta > 0 ? "+" : ""}${delta}</td><td>${escapeHtml(a.reason)}</td>
+          <td>${new Date(a.created_at).toLocaleDateString()}</td></tr>`;
+      })
+      .join("");
+  }
+
+  (async () => {
+    currentUser = await initPage("Stores");
+    if (!currentUser) return;
+    canManage = ["admin", "cashier", "accountant"].includes(currentUser.role);
+    if (!canManage) {
+      document.getElementById("adjust-card").style.display = "none";
+    }
+
+    await loadStock();
+    await loadRequisitions();
+    await loadAdjustments();
+
+    document.getElementById("adjust-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post("/stock/adjustments", {
+          branch_id: currentUser.branch_id,
+          charge_item_id: Number(document.getElementById("adj_item").value),
+          location: "store",
+          quantity_delta: Number(document.getElementById("adj_qty").value),
+          reason: document.getElementById("adj_reason").value,
+        });
+        e.target.reset();
+        await loadStock();
+        await loadAdjustments();
+        alerts.innerHTML = `<div class="success-banner">Adjustment recorded.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not record adjustment")}</div>`;
+      }
+    });
+  })();
+</script>

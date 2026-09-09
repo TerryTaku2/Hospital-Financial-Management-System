@@ -6,11 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit import write_audit_log
 from app.models.billing import ChargeItem, Invoice, InvoiceLine
-from app.models.enums import AuditAction, InvoiceStatus, JournalSourceType
+from app.models.enums import AuditAction, InvoiceStatus, JournalSourceType, StockLocation
 from app.models.patient import Patient
 from app.models.user import User
 from app.schemas.billing import InvoiceCreate
-from app.services import account_lookup, coa_codes
+from app.services import account_lookup, coa_codes, inventory_service
 from app.services.posting_service import LineInput, PostingError, post_journal_entry
 
 
@@ -26,15 +26,17 @@ async def _revenue_account_id_for_line(db: AsyncSession, line: InvoiceLine) -> i
 
 
 async def _adjust_pharmacy_stock(db: AsyncSession, invoice: Invoice, sign: int) -> None:
-    """Dispensing a pharmacy line moves stock; voiding a finalized invoice
-    puts it back. Soft tracking — never blocks billing on low/negative
-    stock, it's informational (see reorder_level on ChargeItem)."""
+    """Dispensing a pharmacy line draws down the Pharmacy location's stock
+    balance; voiding a finalized invoice puts it back. Soft tracking — never
+    blocks billing on low/negative stock, it's informational (see
+    reorder_level on ChargeItem). Pharmacy stock only exists once Stores has
+    issued a requisition into it — see app.services.inventory_service."""
     for line in invoice.lines:
         if line.charge_item_id is None:
             continue
         charge_item = await db.get(ChargeItem, line.charge_item_id)
         if charge_item.category == "Pharmacy":
-            charge_item.quantity_on_hand += sign * line.quantity
+            await inventory_service.adjust_balance(db, charge_item.id, StockLocation.PHARMACY, sign * line.quantity)
 
 
 async def create_invoice(db: AsyncSession, invoice_in: InvoiceCreate, user: User) -> Invoice:

@@ -20,7 +20,6 @@ class ChargeItemCreate(BaseModel):
 class ChargeItemOut(ChargeItemCreate):
     id: int
     is_active: bool
-    quantity_on_hand: Decimal
 
     model_config = {"from_attributes": True}
 

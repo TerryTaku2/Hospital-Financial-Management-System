@@ -70,6 +70,17 @@ class PurchaseOrderStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class StockLocation(str, enum.Enum):
+    STORE = "store"
+    PHARMACY = "pharmacy"
+
+
+class StockRequisitionStatus(str, enum.Enum):
+    DRAFT = "draft"
+    ISSUED = "issued"
+    CANCELLED = "cancelled"
+
+
 class JournalSourceType(str, enum.Enum):
     INVOICE = "invoice"
     PAYMENT = "payment"

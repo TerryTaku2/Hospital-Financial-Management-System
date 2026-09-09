@@ -353,7 +353,8 @@ tbody tr:hover { background: var(--overlay-weak); }
 .badge.paid, .badge.approved, .badge.applied { background: rgba(var(--success-rgb), 0.16); color: var(--color-success-text); }
 .badge.void, .badge.rejected { background: rgba(var(--danger-rgb), 0.16); color: var(--color-danger-text); }
 .badge.partially_paid, .badge.partially_applied { background: rgba(var(--warning-rgb), 0.16); color: var(--color-warning-text); }
-.badge.completed, .badge.refunded { background: rgba(var(--success-rgb), 0.16); color: var(--color-success-text); }
+.badge.completed, .badge.refunded, .badge.issued { background: rgba(var(--success-rgb), 0.16); color: var(--color-success-text); }
+.badge.cancelled { background: rgba(var(--danger-rgb), 0.16); color: var(--color-danger-text); }
 
 .badge.kind-invoice { background: rgba(var(--color-primary-rgb), 0.16); color: var(--color-primary-text); }
 .badge.kind-payment { background: rgba(var(--success-rgb), 0.16); color: var(--color-success-text); }

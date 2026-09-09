@@ -1,0 +1,158 @@
+<title>Pharmacy — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>Pharmacy stock</h2>
+      <p class="text-muted" style="margin-top:-8px">Current branch. Filled by requisitioning stock from <a href="/stores.html">Stores</a>; drawn down automatically when a drug is billed to a patient in <a href="/billing.html">Billing</a>. Items at or below reorder level are flagged.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>On hand</th><th>Reorder level</th><th></th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="create-req-card">
+      <h2>Request stock from Store</h2>
+      <form id="req-form">
+        <div id="lines-container"></div>
+        <button type="button" class="btn secondary" id="add-line">+ Add line</button>
+        <div class="mt-16">
+          <button class="btn" type="submit">Submit requisition</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Requisitions</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Requisition #</th><th>Lines</th><th>Requested</th><th>Status</th><th></th></tr></thead>
+          <tbody id="reqs-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+  let pharmacyItems = [];
+  let canManage = false;
+
+  async function loadStock() {
+    const items = await api.get(`/charge-items?branch_id=${currentUser.branch_id}`);
+    pharmacyItems = items.filter((i) => i.category === "Pharmacy");
+
+    const balances = await api.get(`/stock/balances?branch_id=${currentUser.branch_id}&location=pharmacy`);
+    const quantities = {};
+    balances.forEach((b) => { quantities[b.charge_item_id] = b.quantity_on_hand; });
+
+    document.getElementById("stock-body").innerHTML = pharmacyItems
+      .map((i) => {
+        const qty = quantities[i.id] || 0;
+        const low = i.reorder_level != null && Number(qty) <= Number(i.reorder_level);
+        return `<tr><td>${escapeHtml(i.name)}</td><td>${qty}</td>
+          <td>${i.reorder_level != null ? i.reorder_level : "—"}</td>
+          <td>${low ? '<span class="badge void">Reorder</span>' : ""}</td></tr>`;
+      })
+      .join("");
+  }
+
+  function addLineRow() {
+    const container = document.getElementById("lines-container");
+    const row = document.createElement("div");
+    row.className = "grid grid-3 line-row";
+    row.innerHTML = `
+      <div class="form-row">
+        <label>Item</label>
+        <select class="line-item" required>
+          ${pharmacyItems.map((i) => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-row"><label>Quantity</label><input type="number" class="line-qty" value="1" min="0.01" step="0.01" required /></div>
+      <div><button type="button" class="btn secondary remove-line">Remove</button></div>
+    `;
+    row.querySelector(".remove-line").addEventListener("click", () => row.remove());
+    container.appendChild(row);
+  }
+
+  async function loadRequisitions() {
+    const reqs = await api.get(`/stock-requisitions?branch_id=${currentUser.branch_id}`);
+    document.getElementById("reqs-body").innerHTML = reqs
+      .map((r) => {
+        const summary = r.lines.map((l) => `${escapeHtml(l.description)} × ${l.quantity}`).join(", ");
+        const cancelBtn = canManage && r.status === "draft" ? `<button class="btn danger" data-cancel="${r.id}">Cancel</button>` : "";
+        return `<tr><td>${escapeHtml(r.requisition_number)}</td><td>${summary}</td>
+          <td>${new Date(r.created_at).toLocaleDateString()}</td><td>${statusBadge(r.status)}</td><td>${cancelBtn}</td></tr>`;
+      })
+      .join("");
+    document.querySelectorAll("[data-cancel]").forEach((btn) => {
+      btn.addEventListener("click", () => cancelRequisition(Number(btn.dataset.cancel)));
+    });
+  }
+
+  async function cancelRequisition(id) {
+    const reason = window.prompt("Reason for cancelling this requisition:");
+    if (!reason) return;
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/stock-requisitions/${id}/cancel`, { reason });
+      alerts.innerHTML = `<div class="success-banner">Requisition cancelled.</div>`;
+      await loadRequisitions();
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not cancel requisition")}</div>`;
+    }
+  }
+
+  (async () => {
+    currentUser = await initPage("Pharmacy");
+    if (!currentUser) return;
+    canManage = ["admin", "cashier", "accountant"].includes(currentUser.role);
+    if (!canManage) {
+      document.getElementById("create-req-card").style.display = "none";
+    }
+
+    await loadStock();
+    if (pharmacyItems.length === 0) {
+      document.getElementById("req-form").innerHTML =
+        `<p class="text-muted">No pharmacy charge items exist for this branch yet — <a href="/charge-items.html">add one</a> first.</p>`;
+    } else {
+      addLineRow();
+      document.getElementById("add-line").addEventListener("click", addLineRow);
+    }
+    await loadRequisitions();
+
+    document.getElementById("req-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+
+      const lines = Array.from(document.querySelectorAll(".line-row")).map((row) => ({
+        charge_item_id: Number(row.querySelector(".line-item").value),
+        quantity: Number(row.querySelector(".line-qty").value),
+      }));
+      try {
+        const req = await api.post("/stock-requisitions", {
+          branch_id: currentUser.branch_id,
+          lines,
+        });
+        alerts.innerHTML = `<div class="success-banner">Requisition ${req.requisition_number} submitted — waiting for Stores to issue it.</div>`;
+        await loadRequisitions();
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not submit requisition")}</div>`;
+      }
+    });
+  })();
+</script>

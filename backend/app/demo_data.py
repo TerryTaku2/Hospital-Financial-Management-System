@@ -33,17 +33,20 @@ from app.models.currency import Currency, ExchangeRate
 from app.models.encounter import Encounter
 from app.models.enums import JournalSourceType, PayerType, PaymentMethod, RoleEnum
 from app.models.insurance import Claim, ClaimLine, MedicalAidProvider, PatientCover
+from app.models.inventory import StockAdjustment, StockBalance, StockRequisition, StockRequisitionLine
 from app.models.patient import Patient
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier, SupplierPayment
 from app.models.user import User
 from app.schemas.billing import DepositApply, DepositCreate, InvoiceCreate, InvoiceLineIn, PaymentCreate, RefundCreate
 from app.schemas.insurance import ClaimCreate, ClaimDecision
+from app.schemas.inventory import StockRequisitionCreate, StockRequisitionLineIn
 from app.schemas.procurement import PurchaseOrderCreate, PurchaseOrderLineIn, SupplierPaymentCreate
 from app.security import hash_password
 from app.seed import seed_core
 from app.services.billing_service import create_invoice, finalize_invoice, void_invoice
 from app.services.claims_service import create_claim, decide_claim, submit_claim
 from app.services.deposit_service import apply_deposit, refund_deposit, take_deposit
+from app.services.inventory_service import create_requisition, issue_requisition
 from app.services.payment_service import record_payment
 from app.services.procurement_service import create_purchase_order, receive_purchase_order, record_supplier_payment
 
@@ -98,6 +101,7 @@ async def _reset_all(db: AsyncSession) -> None:
         ClaimLine, Claim,
         InvoiceLine, Refund, Payment, Deposit, Invoice,
         PurchaseOrderLine, SupplierPayment, PurchaseOrder,
+        StockRequisitionLine, StockRequisition, StockAdjustment, StockBalance,
         Encounter, PatientCover, Patient,
         AuditLog, ChargeItem,
         JournalLine, JournalEntry,
@@ -335,15 +339,17 @@ async def _stock_branch_pharmacy(
     suppliers: list[Supplier], charge_items: list[ChargeItem], pay_state: str,
 ) -> None:
     """Places one purchase order covering every pharmacy item at this branch
-    and receives it, so pharmacy stock starts positive instead of the demo
-    billing below driving it negative — and so the new Suppliers/Purchase
-    Orders feature has real data the moment someone logs into the demo."""
+    and receives it into Store, then has Pharmacy requisition most of it
+    back out — so Store, Pharmacy and the Suppliers/Purchase Orders feature
+    all have real, non-zero stock the moment someone logs into the demo,
+    instead of the demo billing below driving Pharmacy's stock negative."""
     pharmacy_items = [item for item in charge_items if item.category == "Pharmacy"]
     if not pharmacy_items:
         return
 
     supplier = rng.choice(suppliers)
     po_dt = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS + rng.randint(1, 5))
+    po_quantities = {item.id: Decimal(rng.randint(300, 600)) for item in pharmacy_items}
     po = await create_purchase_order(
         db,
         PurchaseOrderCreate(
@@ -351,7 +357,7 @@ async def _stock_branch_pharmacy(
             supplier_id=supplier.id,
             currency_code="USD",
             lines=[
-                PurchaseOrderLineIn(charge_item_id=item.id, quantity=Decimal(rng.randint(300, 600)), unit_cost=(item.default_price * Decimal("0.4")).quantize(Decimal("0.01")))
+                PurchaseOrderLineIn(charge_item_id=item.id, quantity=po_quantities[item.id], unit_cost=(item.default_price * Decimal("0.4")).quantize(Decimal("0.01")))
                 for item in pharmacy_items
             ],
         ),
@@ -362,6 +368,40 @@ async def _stock_branch_pharmacy(
 
     po = await receive_purchase_order(db, po, accountant)
     await _backdate_journal(db, JournalSourceType.PURCHASE_ORDER, po.id, po_dt)
+
+    issue_dt = po_dt + timedelta(days=1)
+    requisition = await create_requisition(
+        db,
+        StockRequisitionCreate(
+            branch_id=branch.id,
+            lines=[
+                StockRequisitionLineIn(charge_item_id=item.id, quantity=(po_quantities[item.id] * Decimal("0.7")).quantize(Decimal("1")))
+                for item in pharmacy_items
+            ],
+        ),
+        cashier,
+    )
+    requisition.created_at = issue_dt
+    requisition = await issue_requisition(db, requisition, accountant)
+    requisition.updated_at = issue_dt
+
+    if branch.code == "MAIN":
+        # One outstanding request Store hasn't fulfilled yet, so the
+        # Pharmacy/Stores pages have a pending requisition to show off.
+        pending_dt = datetime.now(timezone.utc) - timedelta(days=rng.randint(1, 3))
+        pending = await create_requisition(
+            db,
+            StockRequisitionCreate(
+                branch_id=branch.id,
+                lines=[
+                    StockRequisitionLineIn(charge_item_id=item.id, quantity=(po_quantities[item.id] * Decimal("0.1")).quantize(Decimal("1")))
+                    for item in pharmacy_items
+                ],
+            ),
+            cashier,
+        )
+        pending.created_at = pending_dt
+        pending.updated_at = pending_dt
 
     if pay_state == "unpaid":
         return
