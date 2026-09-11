@@ -119,6 +119,7 @@ function renderLayout(user, pageTitle) {
       <h1>${pageTitle}</h1>
       <div class="user-badge">
         ${user.full_name} &middot; ${ROLE_LABELS[user.role] || user.role}
+        &nbsp;<a href="/change-password.html" class="btn secondary" style="text-decoration:none">Change Password</a>
         &nbsp;<button class="btn secondary" id="logout-btn">Log out</button>
       </div>
     `;

@@ -7,14 +7,15 @@ from app.branch_scope import is_main_branch_user
 from app.config import settings
 from app.database import get_db
 from app.demo_data import ensure_demo_data
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, verify_csrf
 from app.models.user import User
-from app.schemas.auth import LoginRequest, UserOut
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, UserOut
 from app.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
     generate_csrf_token,
+    hash_password,
     verify_password,
 )
 
@@ -107,3 +108,14 @@ async def logout(response: Response) -> dict[str, bool]:
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> UserOut:
     return await _build_user_out(db, user)
+
+
+@router.post("/change-password", dependencies=[Depends(verify_csrf)])
+async def change_password(
+    payload: ChangePasswordRequest, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict[str, bool]:
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
+    user.hashed_password = hash_password(payload.new_password)
+    await db.commit()
+    return {"ok": True}
