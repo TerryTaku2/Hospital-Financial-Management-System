@@ -1,0 +1,86 @@
+<title>Payroll — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2>New payroll run</h2>
+      <p class="text-muted" style="margin-top:-8px">Generates one payslip per active employee off their basic salary for the period below.</p>
+      <form id="run-form" class="grid grid-3">
+        <div class="form-row"><label>Period start</label><input type="date" id="run_start" required /></div>
+        <div class="form-row"><label>Period end</label><input type="date" id="run_end" required /></div>
+        <div class="form-row"><label>Currency</label>
+          <select id="run_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+        </div>
+        <div><button class="btn" type="submit">Create draft run</button></div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Payroll runs</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Period</th><th>Currency</th><th>Gross</th><th>Deductions</th><th>Net</th><th>Status</th><th></th></tr></thead>
+          <tbody id="runs-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+
+  async function loadRuns() {
+    const runs = await api.get("/payroll-runs");
+    document.getElementById("runs-body").innerHTML = runs
+      .map(
+        (r) => `<tr>
+          <td><a href="/payroll-run-detail.html?id=${r.id}">${r.period_start} to ${r.period_end}</a></td>
+          <td>${r.currency_code}</td>
+          <td>${formatMoney(r.total_gross, "")}</td>
+          <td>${formatMoney(r.total_deductions, "")}</td>
+          <td>${formatMoney(r.total_net, "")}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td><a href="/payroll-run-detail.html?id=${r.id}">Open</a></td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  (async () => {
+    currentUser = await initPage("Payroll");
+    if (!currentUser) return;
+    if (!["admin", "accountant"].includes(currentUser.role)) {
+      document.body.innerHTML = `<div class="error-banner" style="margin:24px">Administrator or accountant access required.</div>`;
+      return;
+    }
+    await loadRuns();
+
+    document.getElementById("run-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        const run = await api.post("/payroll-runs", {
+          branch_id: currentUser.branch_id,
+          period_start: document.getElementById("run_start").value,
+          period_end: document.getElementById("run_end").value,
+          currency_code: document.getElementById("run_currency").value,
+        });
+        alerts.innerHTML = `<div class="success-banner">Draft payroll run created. <a href="/payroll-run-detail.html?id=${run.id}">Open it</a> to review payslips.</div>`;
+        await loadRuns();
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create payroll run")}</div>`;
+      }
+    });
+  })();
+</script>

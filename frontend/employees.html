@@ -1,0 +1,197 @@
+<title>Employees — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <h2 id="form-title">Register employee</h2>
+      <form id="employee-form">
+        <div class="grid grid-3">
+          <div class="form-row"><label>Full name</label><input id="e_fullname" required /></div>
+          <div class="form-row"><label>Department</label><input id="e_department" required /></div>
+          <div class="form-row"><label>Position</label><input id="e_position" required /></div>
+          <div class="form-row"><label>Employment type</label>
+            <select id="e_employment_type">
+              <option value="full_time">Full time</option>
+              <option value="part_time">Part time</option>
+              <option value="contract">Contract</option>
+            </select>
+          </div>
+          <div class="form-row"><label>Hire date</label><input type="date" id="e_hire_date" required /></div>
+          <div class="form-row"><label>Basic salary (per pay period)</label><input type="number" step="0.01" min="0" id="e_salary" required /></div>
+          <div class="form-row"><label>Currency</label>
+            <select id="e_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+          </div>
+          <div class="form-row"><label>National ID</label><input id="e_national_id" /></div>
+          <div class="form-row"><label>Phone</label><input id="e_phone" /></div>
+          <div class="form-row"><label>Email</label><input type="email" id="e_email" /></div>
+          <div class="form-row"><label>Bank name</label><input id="e_bank_name" /></div>
+          <div class="form-row"><label>Bank account number</label><input id="e_bank_account" /></div>
+        </div>
+        <h2>Next of kin</h2>
+        <div class="grid grid-3">
+          <div class="form-row"><label>Name</label><input id="e_kin_name" /></div>
+          <div class="form-row"><label>Phone</label><input id="e_kin_phone" /></div>
+        </div>
+        <div class="mt-16">
+          <button class="btn" type="submit" id="form-submit">Register employee</button>
+          <button class="btn secondary" type="button" id="cancel-edit" hidden>Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Employees</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>#</th><th>Name</th><th>Department</th><th>Position</th><th>Type</th><th>Salary</th><th>Status</th><th></th></tr></thead>
+          <tbody id="employees-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let currentUser = null;
+  let employees = [];
+  let editingId = null;
+
+  const EMPLOYMENT_TYPE_LABELS = { full_time: "Full time", part_time: "Part time", contract: "Contract" };
+
+  function resetForm() {
+    editingId = null;
+    document.getElementById("employee-form").reset();
+    document.getElementById("form-title").textContent = "Register employee";
+    document.getElementById("form-submit").textContent = "Register employee";
+    document.getElementById("cancel-edit").hidden = true;
+    document.getElementById("e_currency").disabled = false;
+  }
+
+  function startEdit(employee) {
+    editingId = employee.id;
+    document.getElementById("e_fullname").value = employee.full_name;
+    document.getElementById("e_department").value = employee.department;
+    document.getElementById("e_position").value = employee.position;
+    document.getElementById("e_employment_type").value = employee.employment_type;
+    document.getElementById("e_hire_date").value = employee.hire_date;
+    document.getElementById("e_salary").value = employee.basic_salary;
+    document.getElementById("e_currency").value = employee.currency_code;
+    document.getElementById("e_currency").disabled = true;
+    document.getElementById("e_national_id").value = employee.national_id || "";
+    document.getElementById("e_phone").value = employee.phone || "";
+    document.getElementById("e_email").value = employee.email || "";
+    document.getElementById("e_bank_name").value = employee.bank_name || "";
+    document.getElementById("e_bank_account").value = employee.bank_account_number || "";
+    document.getElementById("e_kin_name").value = employee.next_of_kin_name || "";
+    document.getElementById("e_kin_phone").value = employee.next_of_kin_phone || "";
+    document.getElementById("form-title").textContent = `Edit ${employee.full_name}`;
+    document.getElementById("form-submit").textContent = "Save changes";
+    document.getElementById("cancel-edit").hidden = false;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function toggleStatus(employee) {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.patch(`/employees/${employee.id}`, {
+        status: employee.status === "active" ? "inactive" : "active",
+      });
+      await loadEmployees();
+      alerts.innerHTML = `<div class="success-banner">Employee ${employee.status === "active" ? "deactivated" : "reactivated"}.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not update employee")}</div>`;
+    }
+  }
+
+  async function loadEmployees() {
+    employees = await api.get(`/employees?branch_id=${currentUser.branch_id}`);
+    document.getElementById("employees-body").innerHTML = employees
+      .map(
+        (e) => `<tr>
+          <td>${escapeHtml(e.employee_number)}</td>
+          <td>${escapeHtml(e.full_name)}</td>
+          <td>${escapeHtml(e.department)}</td>
+          <td>${escapeHtml(e.position)}</td>
+          <td>${EMPLOYMENT_TYPE_LABELS[e.employment_type] || e.employment_type}</td>
+          <td>${formatMoney(e.basic_salary, e.currency_code)}</td>
+          <td>${statusBadge(e.status)}</td>
+          <td>
+            <a href="#" class="edit-link" data-id="${e.id}">Edit</a> &middot;
+            <a href="#" class="toggle-link" data-id="${e.id}">${e.status === "active" ? "Deactivate" : "Reactivate"}</a>
+          </td>
+        </tr>`
+      )
+      .join("");
+
+    document.querySelectorAll(".edit-link").forEach((link) =>
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        startEdit(employees.find((emp) => emp.id === Number(link.dataset.id)));
+      })
+    );
+    document.querySelectorAll(".toggle-link").forEach((link) =>
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        toggleStatus(employees.find((emp) => emp.id === Number(link.dataset.id)));
+      })
+    );
+  }
+
+  (async () => {
+    currentUser = await initPage("Employees");
+    if (!currentUser) return;
+    if (!["admin", "accountant"].includes(currentUser.role)) {
+      document.body.innerHTML = `<div class="error-banner" style="margin:24px">Administrator or accountant access required.</div>`;
+      return;
+    }
+    await loadEmployees();
+
+    document.getElementById("cancel-edit").addEventListener("click", resetForm);
+
+    document.getElementById("employee-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      const payload = {
+        full_name: document.getElementById("e_fullname").value,
+        department: document.getElementById("e_department").value,
+        position: document.getElementById("e_position").value,
+        employment_type: document.getElementById("e_employment_type").value,
+        hire_date: document.getElementById("e_hire_date").value,
+        basic_salary: Number(document.getElementById("e_salary").value),
+        national_id: document.getElementById("e_national_id").value || null,
+        phone: document.getElementById("e_phone").value || null,
+        email: document.getElementById("e_email").value || null,
+        bank_name: document.getElementById("e_bank_name").value || null,
+        bank_account_number: document.getElementById("e_bank_account").value || null,
+        next_of_kin_name: document.getElementById("e_kin_name").value || null,
+        next_of_kin_phone: document.getElementById("e_kin_phone").value || null,
+      };
+      try {
+        if (editingId) {
+          await api.patch(`/employees/${editingId}`, payload);
+          alerts.innerHTML = `<div class="success-banner">Employee updated.</div>`;
+        } else {
+          payload.branch_id = currentUser.branch_id;
+          payload.currency_code = document.getElementById("e_currency").value;
+          await api.post("/employees", payload);
+          alerts.innerHTML = `<div class="success-banner">Employee registered.</div>`;
+        }
+        resetForm();
+        await loadEmployees();
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not save employee")}</div>`;
+      }
+    });
+  })();
+</script>

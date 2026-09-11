@@ -61,6 +61,7 @@ async function apiFetch(path, { method = "GET", body, headers = {}, _isRetry = f
 const api = {
   get: (path) => apiFetch(path),
   post: (path, body, headers) => apiFetch(path, { method: "POST", body, headers }),
+  patch: (path, body, headers) => apiFetch(path, { method: "PATCH", body, headers }),
   ApiError,
 };
 

@@ -40,13 +40,18 @@ const NAV_ITEMS = [
 
   { href: "/pharmacy.html", label: "Pharmacy", icon: "pill", roles: ["admin", "cashier", "accountant", "auditor"], section: "Pharmacy" },
 
+  { href: "/employees.html", label: "Employees", icon: "users", roles: ["admin", "accountant"], section: "HR & Payroll" },
+  { href: "/payroll.html", label: "Payroll", icon: "wallet", roles: ["admin", "accountant"], section: "HR & Payroll" },
+
   { href: "/accounts.html", label: "Chart of Accounts", icon: "book", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
   { href: "/charge-items.html", label: "Charge Items", icon: "tag", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
   { href: "/journal.html", label: "Journal Entries", icon: "fileLines", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
+  { href: "/assets.html", label: "Asset Register", icon: "box", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
 
   { href: "/trial-balance.html", label: "Trial Balance", icon: "scale", roles: ["admin", "accountant", "auditor"], section: "Reports" },
   { href: "/income-statement.html", label: "Income Statement", icon: "trendingUp", roles: ["admin", "accountant", "auditor"], section: "Reports" },
-  { href: "/ar-aging.html", label: "AR Aging", icon: "alertClock", roles: ["admin", "accountant", "auditor"], section: "Reports" },
+  { href: "/ar-aging.html", label: "AR Aging (Debtors)", icon: "alertClock", roles: ["admin", "accountant", "auditor"], section: "Reports" },
+  { href: "/ap-aging.html", label: "AP Aging (Creditors)", icon: "truck", roles: ["admin", "accountant", "auditor"], section: "Reports" },
 
   { href: "/users.html", label: "Users", icon: "users", roles: ["admin"], section: "Admin" },
   { href: "/branches.html", label: "Branches", icon: "building", roles: ["admin"], section: "Admin" },

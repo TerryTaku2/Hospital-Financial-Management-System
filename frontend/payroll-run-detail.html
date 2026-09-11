@@ -1,0 +1,172 @@
+<title>Payroll Run — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2 id="run-title">Loading…</h2>
+        <div id="run-status"></div>
+      </div>
+      <p class="text-muted" id="run-meta"></p>
+      <div id="run-actions"></div>
+    </div>
+
+    <div class="card">
+      <h2>Payslips</h2>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Employee</th><th>Department</th><th>Basic</th><th>Allowances</th><th>Deductions</th><th>Gross</th><th>Net</th><th></th></tr>
+          </thead>
+          <tbody id="items-body"></tbody>
+        </table>
+      </div>
+      <p class="text-right">
+        <strong>Gross: <span id="total-gross"></span> &middot; Deductions: <span id="total-deductions"></span> &middot; Net: <span id="total-net"></span></strong>
+      </p>
+    </div>
+
+    <div class="card" id="pay-card" hidden>
+      <h2>Pay employees</h2>
+      <form id="pay-form" class="grid grid-3">
+        <div class="form-row"><label>Method</label>
+          <select id="pay_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
+        </div>
+        <div><button class="btn" type="submit">Disburse net pay</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  const runId = new URLSearchParams(window.location.search).get("id");
+  let currentUser = null;
+  let run = null;
+
+  function renderActions() {
+    const canManage = ["admin", "accountant"].includes(currentUser.role);
+    const actions = [];
+    if (run.status === "draft" && canManage) {
+      actions.push(`<button class="btn" id="finalize-btn">Finalize (post to ledger)</button>`);
+      actions.push(`<button class="btn danger" id="void-btn">Void</button>`);
+    }
+    document.getElementById("run-actions").innerHTML = actions.join(" ");
+
+    const finalizeBtn = document.getElementById("finalize-btn");
+    if (finalizeBtn) finalizeBtn.addEventListener("click", finalizeRun);
+    const voidBtn = document.getElementById("void-btn");
+    if (voidBtn) voidBtn.addEventListener("click", voidRun);
+
+    document.getElementById("pay-card").hidden = !(run.status === "finalized" && canManage);
+  }
+
+  function renderItems() {
+    const canEdit = run.status === "draft" && ["admin", "accountant"].includes(currentUser.role);
+    document.getElementById("items-body").innerHTML = run.items
+      .map(
+        (item) => `<tr data-item-id="${item.id}">
+          <td>${escapeHtml(item.employee_name)}</td>
+          <td>${escapeHtml(item.department)}</td>
+          <td>${formatMoney(item.basic_salary, "")}</td>
+          <td>${
+            canEdit
+              ? `<input type="number" step="0.01" min="0" class="item-allowances" value="${item.allowances}" style="width:100px" />`
+              : formatMoney(item.allowances, "")
+          }</td>
+          <td>${
+            canEdit
+              ? `<input type="number" step="0.01" min="0" class="item-deductions" value="${item.deductions}" style="width:100px" />`
+              : formatMoney(item.deductions, "")
+          }</td>
+          <td>${formatMoney(item.gross_pay, "")}</td>
+          <td>${formatMoney(item.net_pay, "")}</td>
+          <td>${canEdit ? `<button type="button" class="btn secondary save-item">Save</button>` : ""}</td>
+        </tr>`
+      )
+      .join("");
+
+    document.querySelectorAll(".save-item").forEach((btn) =>
+      btn.addEventListener("click", async (e) => {
+        const row = e.target.closest("tr");
+        const itemId = row.dataset.itemId;
+        const alerts = document.getElementById("alerts");
+        alerts.innerHTML = "";
+        try {
+          await api.patch(`/payroll-runs/${runId}/items/${itemId}`, {
+            allowances: Number(row.querySelector(".item-allowances").value || 0),
+            deductions: Number(row.querySelector(".item-deductions").value || 0),
+          });
+          await load();
+          alerts.innerHTML = `<div class="success-banner">Payslip updated.</div>`;
+        } catch (err) {
+          alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not update payslip")}</div>`;
+        }
+      })
+    );
+  }
+
+  async function load() {
+    run = await api.get(`/payroll-runs/${runId}`);
+    document.getElementById("run-title").textContent = `Payroll run: ${run.period_start} to ${run.period_end}`;
+    document.getElementById("run-status").innerHTML = statusBadge(run.status);
+    document.getElementById("run-meta").textContent = `Currency: ${run.currency_code} · ${run.items.length} employee(s)`;
+    document.getElementById("total-gross").textContent = formatMoney(run.total_gross, run.currency_code);
+    document.getElementById("total-deductions").textContent = formatMoney(run.total_deductions, run.currency_code);
+    document.getElementById("total-net").textContent = formatMoney(run.total_net, run.currency_code);
+    renderActions();
+    renderItems();
+  }
+
+  async function finalizeRun() {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/payroll-runs/${runId}/finalize`, {});
+      await load();
+      alerts.innerHTML = `<div class="success-banner">Payroll run finalized and posted to the general ledger.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not finalize payroll run")}</div>`;
+    }
+  }
+
+  async function voidRun() {
+    if (!window.confirm("Void this draft payroll run?")) return;
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.post(`/payroll-runs/${runId}/void`, {});
+      await load();
+      alerts.innerHTML = `<div class="success-banner">Payroll run voided.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not void payroll run")}</div>`;
+    }
+  }
+
+  (async () => {
+    currentUser = await initPage("Payroll Run");
+    if (!currentUser) return;
+    await load();
+
+    document.getElementById("pay-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        await api.post(`/payroll-runs/${runId}/pay`, { method: document.getElementById("pay_method").value });
+        await load();
+        alerts.innerHTML = `<div class="success-banner">Payroll paid and posted to the general ledger.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not pay payroll run")}</div>`;
+      }
+    });
+  })();
+</script>

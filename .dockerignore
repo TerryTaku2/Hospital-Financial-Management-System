@@ -1,0 +1,10 @@
+.git
+.claude
+**/__pycache__
+**/*.pyc
+backend/.venv
+backend/*.db
+backend/.env
+backend/*.log
+backend/.pytest_cache
+README.md

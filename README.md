@@ -1,8 +1,8 @@
 # Hospital Financial Management System
 
-A v1 hospital finance backend and admin UI: patient billing/invoicing, deposits and refunds, medical aid (insurance) claims, pharmacy procurement (suppliers, purchase orders, stock levels), a double-entry General Ledger, accounts receivable aging, multi-currency (USD/ZWG), role-based access control, and a full audit trail. Built with **FastAPI + SQLAlchemy (async) + PostgreSQL** and a **plain HTML/CSS/JS** frontend (no build step).
+A v1 hospital finance backend and admin UI: patient billing/invoicing, deposits and refunds, medical aid (insurance) claims, pharmacy procurement (suppliers, purchase orders, stock levels), employee registration and payroll runs, a double-entry General Ledger, accounts receivable aging, multi-currency (USD/ZWG), role-based access control, and a full audit trail. Built with **FastAPI + SQLAlchemy (async) + PostgreSQL** and a **plain HTML/CSS/JS** frontend (no build step).
 
-Deferred to a later phase: payroll, budgeting, fixed asset register, and general (non-pharmacy) Accounts Payable.
+Deferred to a later phase: budgeting, fixed asset register, and general (non-pharmacy) Accounts Payable.
 
 ## How it's put together
 
@@ -73,13 +73,34 @@ There's also `python -m app.seed_investor_demo` for a much larger one-off datase
 
 Set `DEMO_MODE=true` (see `.env.example`) to turn this deployment into a live, always-fresh demo instance — the same pattern used in the `store ERP` sibling project. With it on:
 
-- The **entire database** is wiped and reseeded with a fresh month of activity across three branches every time the app starts, *and* every time anyone clicks **Login to Demo Account** on the login page (`POST /api/auth/demo-login`, no credentials needed) — so a visitor who pokes around as admin can never leave it messy for the next person.
+- The **entire database** is wiped and reseeded with a fresh month of activity across three branches every time the app starts, *and* every time anyone clicks **Login to Demo Account** on the login page (`POST /api/auth/demo-login`, no credentials needed) — so a visitor who pokes around as `demo.admin` can never leave it messy for the next person.
 - The dataset: three branches (Main, North, West), two suppliers, one received purchase order per branch (in `paid`/`partially_paid`/`received`-unpaid states so the AP side has variety) that stocks each branch's pharmacy items, ~50 patients total, a price list spanning consultations/pharmacy/procedures/lab/imaging/ward fees, billing episodes over the last 28 days covering every invoice state (draft, paid, partially paid, aged unpaid, voided, deposit-with-refund) and medical aid claims (approved/rejected/pending) — plus one deliberately 95-day-aged unpaid invoice per branch so AR Aging always has something in the 90+ bucket. Deterministic (fixed RNG seed), so every reset produces the same numbers. Regenerates in a few seconds.
-- Log in as `admin` / `ChangeMe123!` for the full consolidated view, or any branch's cashier/accountant (e.g. `cashier.main`, `accountant.north`) with password `Demo1234!`.
+- Log in as `demo.admin` / `Demo1234!` for the full consolidated view, or any branch's cashier/accountant (e.g. `cashier.main`, `accountant.north`) with password `Demo1234!`. This is a dedicated demo-only admin account, kept separate from the real `admin` / `ChangeMe123!` system-administrator account — clicking **Login to Demo Account** never hands a visitor the real admin identity or credentials.
 
 **This app has no multi-tenant isolation** — unlike `store ERP`'s `Company.is_demo` sandboxing, `DEMO_MODE=true` here wipes *everything*, not a scoped-off slice. Only ever enable it on a deployment that will never hold real hospital data. It's `false` by default specifically so local dev (`uvicorn --reload`, which re-runs startup on every reload) never loses your data, and so a real deployment doesn't accidentally expose a public data-wipe endpoint — `POST /api/auth/demo-login` returns 404 unless `DEMO_MODE=true`, and the login page only shows the demo button when `/api/health` reports `demo_mode: true`.
 
 To enable on Render: Dashboard → your web service → Environment → add `DEMO_MODE=true`, then redeploy.
+
+## Deploying to Render
+
+`render.yaml` (repo root) is a [Render Blueprint](https://render.com/docs/blueprint-spec) that provisions one web service running the Docker image, backed by SQLite on a persistent [Disk](https://render.com/docs/disks) mounted at `/var/data` — so the database survives redeploys and restarts instead of living on the container's ephemeral filesystem.
+
+```bash
+# In the Render dashboard: New → Blueprint → point it at this repo.
+# Render reads render.yaml and creates the service + disk automatically.
+```
+
+Notes:
+
+- **Disks require a paid plan** — the blueprint uses `starter`; Render's free tier doesn't support them. A disk also pins the service to a single instance (no horizontal autoscaling), which is fine for this app since it isn't built for multi-instance/multi-tenant use anyway.
+- `JWT_SECRET_KEY` is auto-generated by Render (`generateValue: true`) — you don't need to set it.
+- After the first deploy, seed the Chart of Accounts and admin user once via the Render Shell tab (or a one-off Job):
+  ```bash
+  python -m app.seed
+  ```
+  Skip this if you're turning on `DEMO_MODE=true` instead — it seeds and resets automatically on every startup.
+- The build context is the **repository root**, not `backend/` — `backend/Dockerfile` copies both `backend/` and `frontend/` into the image (`dockerContext: .` in `render.yaml`; `docker compose up --build` does the same locally). If you ever change the Dockerfile, keep the two directories laid out the same way inside the image (`/app/app/...` and `/frontend`) since `app/main.py` derives the frontend path from its own location.
+- To switch to Postgres instead (matching the `docker compose` setup below) — e.g. if you outgrow a single-instance SQLite deployment — drop the `disk:` block, add a Render Postgres instance, and point `DATABASE_URL` at its connection string.
 
 ## Running it with PostgreSQL / Docker
 
