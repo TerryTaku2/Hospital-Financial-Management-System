@@ -63,10 +63,12 @@ async def login(credentials: LoginRequest, response: Response, db: AsyncSession 
 @router.post("/demo-login", response_model=UserOut)
 async def demo_login(response: Response, db: AsyncSession = Depends(get_db)) -> UserOut:
     """Public, no-credentials entry point: wipes the entire database back to
-    a fresh, richly seeded demo state and logs straight in as its admin
-    user. This app has no tenant isolation, so this endpoint is only safe
-    because this deployment is a demo/pitch instance — never point it at
-    real patient data."""
+    a fresh, richly seeded demo state and logs straight in as the dedicated
+    "demo.admin" user (kept separate from the real "admin" system-admin
+    account so demo visitors never get handed real admin credentials). This
+    app has no tenant isolation, so this endpoint is only safe because this
+    deployment is a demo/pitch instance — never point it at real patient
+    data."""
     if not settings.demo_mode:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Demo login is not enabled on this deployment")
     admin = await ensure_demo_data(db)

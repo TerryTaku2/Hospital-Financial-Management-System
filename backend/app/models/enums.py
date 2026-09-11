@@ -89,7 +89,32 @@ class JournalSourceType(str, enum.Enum):
     REFUND = "refund"
     PURCHASE_ORDER = "purchase_order"
     SUPPLIER_PAYMENT = "supplier_payment"
+    PAYROLL = "payroll"
+    PAYROLL_PAYMENT = "payroll_payment"
     MANUAL = "manual"
+
+
+class EmploymentType(str, enum.Enum):
+    FULL_TIME = "full_time"
+    PART_TIME = "part_time"
+    CONTRACT = "contract"
+
+
+class EmployeeStatus(str, enum.Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+
+
+class PayrollRunStatus(str, enum.Enum):
+    DRAFT = "draft"
+    FINALIZED = "finalized"
+    PAID = "paid"
+    VOID = "void"
+
+
+class AssetStatus(str, enum.Enum):
+    ACTIVE = "active"
+    DISPOSED = "disposed"
 
 
 class AuditAction(str, enum.Enum):

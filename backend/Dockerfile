@@ -1,11 +1,16 @@
+# Build context is the repository root (not this backend/ directory) so the
+# image can bake in ../frontend too — app.main serves it via StaticFiles.
+# docker-compose.yml and render.yaml both build with context: .. / dockerContext: .
+
 FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
+COPY frontend/ /frontend
 
 EXPOSE 8000
 

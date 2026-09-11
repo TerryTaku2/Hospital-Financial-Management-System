@@ -35,6 +35,21 @@ class ArAgingOut(BaseModel):
     grand_total: Decimal
 
 
+class ApAgingRow(BaseModel):
+    creditor_id: int
+    creditor_name: str
+    bucket_0_30: Decimal
+    bucket_31_60: Decimal
+    bucket_61_90: Decimal
+    bucket_90_plus: Decimal
+    total_outstanding: Decimal
+
+
+class ApAgingOut(BaseModel):
+    rows: list[ApAgingRow]
+    grand_total: Decimal
+
+
 class IncomeStatementLine(BaseModel):
     account_id: int
     account_code: str

@@ -9,6 +9,7 @@ from app.database import AsyncSessionLocal
 from app.demo_data import ensure_demo_data
 from app.routers import (
     accounts,
+    assets,
     audit_logs,
     auth,
     branches,
@@ -16,12 +17,14 @@ from app.routers import (
     claims,
     currencies,
     deposits,
+    employees,
     encounters,
     invoices,
     journal,
     medical_aid_providers,
     patients,
     payments,
+    payroll,
     purchase_orders,
     reports,
     stock,
@@ -56,6 +59,9 @@ app.include_router(deposits.router)
 app.include_router(claims.router)
 app.include_router(suppliers.router)
 app.include_router(purchase_orders.router)
+app.include_router(employees.router)
+app.include_router(payroll.router)
+app.include_router(assets.router)
 app.include_router(stock.router)
 app.include_router(stock_requisitions.router)
 app.include_router(reports.router)

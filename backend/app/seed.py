@@ -30,6 +30,8 @@ DEFAULT_ACCOUNTS = [
     (coa_codes.AR_MEDICAL_AID, "Accounts Receivable - Medical Aid", AccountType.ASSET),
     (coa_codes.DEPOSITS_HELD, "Deposits Held (Liability)", AccountType.LIABILITY),
     (coa_codes.AP_SUPPLIERS, "Accounts Payable - Suppliers", AccountType.LIABILITY),
+    (coa_codes.PAYROLL_PAYABLE, "Payroll Payable", AccountType.LIABILITY),
+    (coa_codes.PAYROLL_DEDUCTIONS_PAYABLE, "Payroll Deductions Payable", AccountType.LIABILITY),
     ("3000", "Owner's Equity", AccountType.EQUITY),
     ("4000", "Revenue - Consultations", AccountType.INCOME),
     ("4010", "Revenue - Pharmacy", AccountType.INCOME),
@@ -37,7 +39,7 @@ DEFAULT_ACCOUNTS = [
     ("4030", "Revenue - Ward/Bed Fees", AccountType.INCOME),
     (coa_codes.REVENUE_GENERAL, "Revenue - General/Miscellaneous", AccountType.INCOME),
     (coa_codes.COGS_DRUGS, "Cost of Drugs & Consumables", AccountType.EXPENSE),
-    ("5010", "Salaries & Wages", AccountType.EXPENSE),
+    (coa_codes.SALARIES_EXPENSE, "Salaries & Wages", AccountType.EXPENSE),
 ]
 
 

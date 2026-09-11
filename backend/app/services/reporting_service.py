@@ -6,10 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.accounting import Account, JournalEntry, JournalLine
 from app.models.billing import Deposit, Invoice, Payment, Refund
-from app.models.enums import AccountType, InvoiceStatus, PayerType
+from app.models.enums import AccountType, InvoiceStatus, PayerType, PurchaseOrderStatus
 from app.models.insurance import MedicalAidProvider
 from app.models.patient import Patient
+from app.models.procurement import PurchaseOrder, Supplier
 from app.schemas.reports import (
+    ApAgingOut,
+    ApAgingRow,
     ArAgingOut,
     ArAgingRow,
     DailyTransactionRow,
@@ -154,6 +157,57 @@ async def ar_aging(db: AsyncSession, branch_id: int | None = None) -> ArAgingOut
     ]
     grand_total = sum((row.total_outstanding for row in rows), Decimal("0"))
     return ArAgingOut(rows=rows, grand_total=grand_total)
+
+
+async def ap_aging(db: AsyncSession, branch_id: int | None = None) -> ApAgingOut:
+    stmt = select(PurchaseOrder).where(
+        PurchaseOrder.status.in_([PurchaseOrderStatus.RECEIVED, PurchaseOrderStatus.PARTIALLY_PAID])
+    )
+    if branch_id is not None:
+        stmt = stmt.where(PurchaseOrder.branch_id == branch_id)
+    purchase_orders = (await db.execute(stmt)).scalars().all()
+
+    today = datetime.now(timezone.utc).date()
+    buckets: dict[int, dict[str, Decimal]] = {}
+    creditor_names: dict[int, str] = {}
+
+    for po in purchase_orders:
+        outstanding = po.total - po.amount_paid
+        if outstanding <= 0:
+            continue
+
+        if po.supplier_id not in creditor_names:
+            supplier = await db.get(Supplier, po.supplier_id)
+            creditor_names[po.supplier_id] = supplier.name if supplier else f"Supplier #{po.supplier_id}"
+
+        bucket = buckets.setdefault(
+            po.supplier_id,
+            {"bucket_0_30": Decimal("0"), "bucket_31_60": Decimal("0"), "bucket_61_90": Decimal("0"), "bucket_90_plus": Decimal("0")},
+        )
+        age_days = (today - po.created_at.date()).days
+        if age_days <= 30:
+            bucket["bucket_0_30"] += outstanding
+        elif age_days <= 60:
+            bucket["bucket_31_60"] += outstanding
+        elif age_days <= 90:
+            bucket["bucket_61_90"] += outstanding
+        else:
+            bucket["bucket_90_plus"] += outstanding
+
+    rows = [
+        ApAgingRow(
+            creditor_id=supplier_id,
+            creditor_name=creditor_names[supplier_id],
+            bucket_0_30=b["bucket_0_30"],
+            bucket_31_60=b["bucket_31_60"],
+            bucket_61_90=b["bucket_61_90"],
+            bucket_90_plus=b["bucket_90_plus"],
+            total_outstanding=sum(b.values(), Decimal("0")),
+        )
+        for supplier_id, b in buckets.items()
+    ]
+    grand_total = sum((row.total_outstanding for row in rows), Decimal("0"))
+    return ApAgingOut(rows=rows, grand_total=grand_total)
 
 
 async def revenue_trend(db: AsyncSession, days: int = 90, branch_id: int | None = None) -> RevenueTrendOut:

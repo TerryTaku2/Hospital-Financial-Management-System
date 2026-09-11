@@ -4,8 +4,10 @@
 journal entry and user in the database and regenerates a fresh, believable
 month of activity across three branches. It's called both at application
 startup and on every `/api/auth/demo-login` request, so a demo visitor —
-who has full admin power in the sandbox — can never leave it messy for the
-next person. There is no tenant separation in this codebase (unlike a
+who has full admin power in the sandbox via a dedicated "demo.admin"
+account, kept separate from the real "admin" system-administrator account
+— can never leave it messy for the next person. There is no tenant
+separation in this codebase (unlike a
 multi-tenant app where a "demo company" can be isolated from real
 customer data), so this wipes the *entire* database: this app must only
 ever be run as a demo/pitch instance, never with real patient data.
@@ -30,16 +32,19 @@ from app.models.audit_log import AuditLog
 from app.models.billing import ChargeItem, Deposit, Invoice, InvoiceLine, Payment, Refund
 from app.models.branch import Branch
 from app.models.currency import Currency, ExchangeRate
+from app.models.employee import Employee
 from app.models.encounter import Encounter
-from app.models.enums import JournalSourceType, PayerType, PaymentMethod, RoleEnum
+from app.models.enums import EmploymentType, JournalSourceType, PayerType, PaymentMethod, RoleEnum
 from app.models.insurance import Claim, ClaimLine, MedicalAidProvider, PatientCover
 from app.models.inventory import StockAdjustment, StockBalance, StockRequisition, StockRequisitionLine
 from app.models.patient import Patient
+from app.models.payroll import PayrollRun, PayslipItem
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier, SupplierPayment
 from app.models.user import User
 from app.schemas.billing import DepositApply, DepositCreate, InvoiceCreate, InvoiceLineIn, PaymentCreate, RefundCreate
 from app.schemas.insurance import ClaimCreate, ClaimDecision
 from app.schemas.inventory import StockRequisitionCreate, StockRequisitionLineIn
+from app.schemas.payroll import PayrollRunCreate
 from app.schemas.procurement import PurchaseOrderCreate, PurchaseOrderLineIn, SupplierPaymentCreate
 from app.security import hash_password
 from app.seed import seed_core
@@ -48,9 +53,11 @@ from app.services.claims_service import create_claim, decide_claim, submit_claim
 from app.services.deposit_service import apply_deposit, refund_deposit, take_deposit
 from app.services.inventory_service import create_requisition, issue_requisition
 from app.services.payment_service import record_payment
+from app.services.payroll_service import create_payroll_run, finalize_payroll_run, pay_payroll_run, update_payslip_item
 from app.services.procurement_service import create_purchase_order, receive_purchase_order, record_supplier_payment
 
 DEMO_PASSWORD = "Demo1234!"
+DEMO_ADMIN_USERNAME = "demo.admin"
 RNG_SEED = 42
 WINDOW_DAYS = 27
 
@@ -94,6 +101,24 @@ SUPPLIER_DEFS = [
     ("NATPHARM", "National Pharmaceutical Company", "+263 71 300 2000"),
 ]
 
+EMPLOYEE_TEMPLATES = [
+    ("Administration", "Hospital Administrator", EmploymentType.FULL_TIME, Decimal("1800"), Decimal("2200")),
+    ("Administration", "Finance Officer", EmploymentType.FULL_TIME, Decimal("1200"), Decimal("1500")),
+    ("Administration", "Receptionist", EmploymentType.FULL_TIME, Decimal("400"), Decimal("550")),
+    ("Clinical", "General Practitioner", EmploymentType.FULL_TIME, Decimal("2500"), Decimal("3200")),
+    ("Clinical", "Specialist Physician", EmploymentType.CONTRACT, Decimal("3500"), Decimal("4500")),
+    ("Clinical", "Registered Nurse", EmploymentType.FULL_TIME, Decimal("800"), Decimal("1100")),
+    ("Clinical", "Nurse Aide", EmploymentType.FULL_TIME, Decimal("350"), Decimal("450")),
+    ("Pharmacy", "Pharmacist", EmploymentType.FULL_TIME, Decimal("1500"), Decimal("1900")),
+    ("Pharmacy", "Pharmacy Technician", EmploymentType.FULL_TIME, Decimal("600"), Decimal("800")),
+    ("Support Services", "Cleaner", EmploymentType.PART_TIME, Decimal("250"), Decimal("350")),
+    ("Support Services", "Security Guard", EmploymentType.CONTRACT, Decimal("300"), Decimal("400")),
+    ("Support Services", "Driver", EmploymentType.FULL_TIME, Decimal("350"), Decimal("450")),
+]
+
+# Roughly scaled to each branch's patient_count in BRANCH_DEFS (MAIN/NORTH/WEST).
+EMPLOYEE_COUNTS = [10, 7, 5]
+
 
 async def _reset_all(db: AsyncSession) -> None:
     """Deletes every row of business data, in FK-safe (children-first) order."""
@@ -106,6 +131,7 @@ async def _reset_all(db: AsyncSession) -> None:
         AuditLog, ChargeItem,
         JournalLine, JournalEntry,
         MedicalAidProvider, Supplier,
+        PayslipItem, PayrollRun, Employee,
         User, Branch,
         Account, ExchangeRate, Currency,
     ]:
@@ -419,9 +445,99 @@ async def _stock_branch_pharmacy(
     await _backdate_journal(db, JournalSourceType.SUPPLIER_PAYMENT, payment.id, pay_dt)
 
 
+def _random_salary(rng: random.Random, low: Decimal, high: Decimal) -> Decimal:
+    return Decimal(str(rng.randint(int(low), int(high)))).quantize(Decimal("0.01"))
+
+
+async def _ensure_employees(db: AsyncSession, rng: random.Random, branch: Branch, count: int) -> list[Employee]:
+    """One employee per HR/payroll job template, roughly scaled per branch —
+    a realistic mix of clinical, pharmacy, admin and support staff so the
+    Payroll demo has real departments and salary bands to show off."""
+    templates = rng.sample(EMPLOYEE_TEMPLATES, k=min(count, len(EMPLOYEE_TEMPLATES)))
+    if count > len(templates):
+        templates += rng.choices(EMPLOYEE_TEMPLATES, k=count - len(templates))
+
+    employees = []
+    for i, (department, position, employment_type, low, high) in enumerate(templates, start=1):
+        sex = rng.choice(["M", "F"])
+        first = rng.choice(MALE_FIRST_NAMES if sex == "M" else FEMALE_FIRST_NAMES)
+        last = rng.choice(SURNAMES)
+        hire_date = (datetime.now(timezone.utc) - timedelta(days=rng.randint(120, 1800))).date()
+        employee = Employee(
+            branch_id=branch.id,
+            employee_number=f"EMP-{branch.code}-{i:03d}",
+            full_name=f"{first} {last}",
+            national_id=(
+                f"{rng.choice(['63', '08', '04', '75'])}-{rng.randint(100000, 999999)}"
+                f"{rng.choice(string.ascii_uppercase)}{rng.randint(10, 99)}"
+            ),
+            phone=f"0{rng.choice([71, 73, 77, 78])}{rng.randint(1000000, 9999999)}",
+            department=department,
+            position=position,
+            employment_type=employment_type,
+            hire_date=hire_date,
+            basic_salary=_random_salary(rng, low, high),
+            currency_code="USD",
+            bank_name=rng.choice(["CBZ Bank", "Steward Bank", "NMB Bank", "ZB Bank"]),
+            bank_account_number=str(rng.randint(1000000000, 9999999999)),
+            next_of_kin_name=f"{rng.choice(FEMALE_FIRST_NAMES + MALE_FIRST_NAMES)} {last}",
+            next_of_kin_phone=f"0{rng.choice([71, 73, 77, 78])}{rng.randint(1000000, 9999999)}",
+        )
+        db.add(employee)
+        employees.append(employee)
+    await db.flush()
+    return employees
+
+
+async def _run_branch_payroll(db: AsyncSession, rng: random.Random, *, branch: Branch, accountant: User) -> None:
+    """One finalized-and-paid run for last month (payroll history, with a
+    couple of employees given an allowance/deduction for realism) plus one
+    draft run for the current month, left as-is so a live demo can walk
+    through editing, finalizing and paying it."""
+    today = datetime.now(timezone.utc).date()
+    first_of_this_month = today.replace(day=1)
+    last_of_prev_month = first_of_this_month - timedelta(days=1)
+    first_of_prev_month = last_of_prev_month.replace(day=1)
+
+    prev_run = await create_payroll_run(
+        db,
+        PayrollRunCreate(branch_id=branch.id, period_start=first_of_prev_month, period_end=last_of_prev_month, currency_code="USD"),
+        accountant,
+    )
+    for item in rng.sample(prev_run.items, k=min(2, len(prev_run.items))):
+        await update_payslip_item(
+            db, prev_run, item,
+            allowances=Decimal(str(rng.choice([0, 25, 50]))),
+            deductions=Decimal(str(rng.choice([0, 15, 30]))),
+            notes=None,
+        )
+
+    prev_run = await finalize_payroll_run(db, prev_run, accountant)
+    finalize_dt = datetime(last_of_prev_month.year, last_of_prev_month.month, last_of_prev_month.day, 16, 0, tzinfo=timezone.utc)
+    await _backdate_journal(db, JournalSourceType.PAYROLL, prev_run.id, finalize_dt)
+    prev_run.created_at = finalize_dt - timedelta(days=1)
+    prev_run.finalized_at = finalize_dt
+    prev_run.updated_at = finalize_dt
+
+    prev_run = await pay_payroll_run(db, prev_run, accountant, PaymentMethod.EFT)
+    pay_dt = finalize_dt + timedelta(days=2)
+    await _backdate_journal(db, JournalSourceType.PAYROLL_PAYMENT, prev_run.id, pay_dt)
+    prev_run.paid_at = pay_dt
+    prev_run.updated_at = pay_dt
+
+    await create_payroll_run(
+        db,
+        PayrollRunCreate(branch_id=branch.id, period_start=first_of_this_month, period_end=today, currency_code="USD"),
+        accountant,
+    )
+
+
 async def ensure_demo_data(db: AsyncSession) -> User:
     """Wipes the database and regenerates a fresh demo dataset. Returns the
-    admin user to log in as."""
+    dedicated "demo.admin" user to log in as — kept separate from the
+    "admin" system-administrator account that `seed_core()` also creates,
+    so demo visitors are never handed the real admin identity/credentials
+    and audit trails don't conflate the two."""
     await _reset_all(db)
     await seed_core(db)
 
@@ -431,6 +547,11 @@ async def ensure_demo_data(db: AsyncSession) -> User:
     account_ids = {code: acc_id for code, acc_id in account_rows}
     providers = list((await db.execute(select(MedicalAidProvider))).scalars().all())
     suppliers = [await _ensure_supplier(db, code, name, contact) for code, name, contact in SUPPLIER_DEFS]
+
+    main_branch = (await db.execute(select(Branch).where(Branch.code == "MAIN"))).scalars().first()
+    demo_admin = await _ensure_user(
+        db, branch_id=main_branch.id, username=DEMO_ADMIN_USERNAME, full_name="Demo Administrator", role=RoleEnum.ADMIN
+    )
     await db.commit()
 
     pay_states = ["paid", "partially_paid", "unpaid"]
@@ -447,6 +568,11 @@ async def ensure_demo_data(db: AsyncSession) -> User:
             db, rng, branch=branch, cashier=cashier, accountant=accountant, suppliers=suppliers,
             charge_items=charge_items, pay_state=pay_states[branch_index % len(pay_states)],
         )
+        await db.commit()
+
+        await _ensure_employees(db, rng, branch, EMPLOYEE_COUNTS[branch_index % len(EMPLOYEE_COUNTS)])
+        await db.commit()
+        await _run_branch_payroll(db, rng, branch=branch, accountant=accountant)
         await db.commit()
 
         for i in range(patient_count):
@@ -504,5 +630,4 @@ async def ensure_demo_data(db: AsyncSession) -> User:
 
         await db.commit()
 
-    admin = (await db.execute(select(User).where(User.username == "admin"))).scalars().first()
-    return admin
+    return demo_admin
