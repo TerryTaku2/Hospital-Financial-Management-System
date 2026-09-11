@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,7 +7,7 @@ from app.database import get_db
 from app.dependencies import require_role, verify_csrf
 from app.models.enums import RoleEnum
 from app.models.user import User
-from app.schemas.auth import UserCreate, UserOut
+from app.schemas.auth import AdminResetPasswordRequest, UserCreate, UserOut
 from app.security import hash_password
 
 router = APIRouter(
@@ -47,3 +47,19 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@router.patch("/{user_id}/reset-password")
+async def reset_password(
+    user_id: int,
+    payload: AdminResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),
+    scope: BranchScope = Depends(get_branch_scope),
+) -> dict[str, bool]:
+    user = await db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    scope.check_write(user.branch_id)
+    user.hashed_password = hash_password(payload.new_password)
+    await db.commit()
+    return {"ok": True}

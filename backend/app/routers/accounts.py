@@ -8,7 +8,7 @@ from app.dependencies import get_current_user, require_role, verify_csrf
 from app.models.accounting import Account, JournalEntry, JournalLine
 from app.models.enums import RoleEnum
 from app.models.user import User
-from app.schemas.accounting import AccountCreate, AccountOut, JournalLineOut
+from app.schemas.accounting import AccountCreate, AccountOut, AccountUpdate, JournalLineOut
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"], dependencies=[Depends(verify_csrf)])
 
@@ -24,6 +24,20 @@ async def list_accounts(db: AsyncSession = Depends(get_db), _: User = Depends(ge
 async def create_account(account_in: AccountCreate, db: AsyncSession = Depends(get_db)) -> Account:
     account = Account(**account_in.model_dump())
     db.add(account)
+    await db.commit()
+    await db.refresh(account)
+    return account
+
+
+@router.patch(
+    "/{account_id}", response_model=AccountOut, dependencies=[Depends(require_role(RoleEnum.ADMIN, RoleEnum.ACCOUNTANT))]
+)
+async def update_account(account_id: int, account_in: AccountUpdate, db: AsyncSession = Depends(get_db)) -> Account:
+    account = await db.get(Account, account_id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Account not found")
+    for field, value in account_in.model_dump(exclude_unset=True).items():
+        setattr(account, field, value)
     await db.commit()
     await db.refresh(account)
     return account

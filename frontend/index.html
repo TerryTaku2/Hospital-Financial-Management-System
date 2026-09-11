@@ -74,10 +74,23 @@
           </div>
         </div>
 
+        <div class="forgot-row">
+          <button type="button" class="link-btn" id="forgot-link">Forgot password?</button>
+        </div>
+
         <button class="btn-login" type="submit" id="login-btn">
           <span class="btn-label">Sign in</span>
         </button>
       </form>
+
+      <div class="support-box" id="support-box" hidden>
+        <p>Password resets are handled by your system administrator. Contact support to have your password reset:</p>
+        <ul>
+          <li>Phone: <a href="tel:+263774128219">0774 128 219</a></li>
+          <li>Email: <a href="mailto:terrencemuromba@gmail.com">terrencemuromba@gmail.com</a></li>
+          <li>Web: <a href="https://t-techsolutions.co.zw" target="_blank" rel="noopener noreferrer">t-techsolutions.co.zw</a></li>
+        </ul>
+      </div>
 
       <div class="login-divider" id="demo-divider" hidden>or</div>
 
@@ -98,6 +111,12 @@
     passwordInput.type = isHidden ? "text" : "password";
     toggleBtn.classList.toggle("is-visible", isHidden);
     toggleBtn.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
+  });
+
+  const forgotLink = document.getElementById("forgot-link");
+  const supportBox = document.getElementById("support-box");
+  forgotLink.addEventListener("click", () => {
+    supportBox.hidden = !supportBox.hidden;
   });
 
   const loginBtn = document.getElementById("login-btn");

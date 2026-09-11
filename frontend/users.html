@@ -32,7 +32,7 @@
       <h2>Users</h2>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Username</th><th>Full name</th><th>Email</th><th>Role</th><th>Branch</th><th>Active</th></tr></thead>
+          <thead><tr><th>Username</th><th>Full name</th><th>Email</th><th>Role</th><th>Branch</th><th>Active</th><th></th></tr></thead>
           <tbody id="users-body"></tbody>
         </table>
       </div>
@@ -49,8 +49,26 @@
     const users = await api.get("/users");
     document.getElementById("users-body").innerHTML = users
       .map((u) => `<tr><td>${escapeHtml(u.username)}</td><td>${escapeHtml(u.full_name)}</td><td>${escapeHtml(u.email)}</td>
-        <td>${ROLE_LABELS[u.role] || u.role}</td><td>${u.branch_id}</td><td>${u.is_active ? "Yes" : "No"}</td></tr>`)
+        <td>${ROLE_LABELS[u.role] || u.role}</td><td>${u.branch_id}</td><td>${u.is_active ? "Yes" : "No"}</td>
+        <td><button type="button" class="btn secondary reset-pw" data-id="${u.id}" data-username="${escapeHtml(u.username)}">Reset password</button></td></tr>`)
       .join("");
+  }
+
+  async function resetPassword(userId, username) {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    const newPassword = prompt(`New password for "${username}" (min 8 characters):`);
+    if (!newPassword) return;
+    if (newPassword.length < 8) {
+      alerts.innerHTML = `<div class="error-banner">Password must be at least 8 characters.</div>`;
+      return;
+    }
+    try {
+      await api.patch(`/users/${userId}/reset-password`, { new_password: newPassword });
+      alerts.innerHTML = `<div class="success-banner">Password reset for "${escapeHtml(username)}".</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not reset password")}</div>`;
+    }
   }
 
   (async () => {
@@ -65,6 +83,12 @@
       document.getElementById("u_branch").readOnly = true;
     }
     await loadUsers();
+
+    document.getElementById("users-body").addEventListener("click", (e) => {
+      const btn = e.target.closest(".reset-pw");
+      if (!btn) return;
+      resetPassword(Number(btn.dataset.id), btn.dataset.username);
+    });
 
     document.getElementById("user-form").addEventListener("submit", async (e) => {
       e.preventDefault();

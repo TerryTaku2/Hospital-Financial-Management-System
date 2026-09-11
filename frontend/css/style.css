@@ -603,6 +603,37 @@ tbody tr:hover { background: var(--overlay-weak); }
 .toggle-password:hover { color: var(--color-text); }
 .toggle-password.is-visible { color: var(--color-primary-text); }
 
+.forgot-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -8px 0 14px 0;
+}
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+.link-btn:hover { text-decoration: underline; }
+
+.support-box {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-primary-tint);
+  font-size: 12.5px;
+  color: var(--color-text);
+}
+.support-box p { margin: 0 0 8px 0; }
+.support-box ul { margin: 0; padding-left: 18px; }
+.support-box li { margin-bottom: 4px; }
+.support-box a { color: var(--color-primary-text); font-weight: 600; }
+
 .btn-login {
   width: 100%;
   height: 44px;

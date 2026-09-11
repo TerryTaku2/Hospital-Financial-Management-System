@@ -20,6 +20,18 @@ class AccountOut(AccountCreate):
     model_config = {"from_attributes": True}
 
 
+class AccountUpdate(BaseModel):
+    """`code` is deliberately not editable here — a fixed set of codes
+    (see app/services/coa_codes.py) are looked up by the posting service
+    for every invoice/payment/deposit/claim/purchase-order/payroll action,
+    so changing one out from under it would break those flows."""
+
+    name: str | None = None
+    type: AccountType | None = None
+    parent_id: int | None = None
+    is_active: bool | None = None
+
+
 class JournalLineIn(BaseModel):
     account_id: int
     debit: Decimal = Decimal("0")

@@ -18,6 +18,7 @@
         <table>
           <thead><tr><th>Creditor</th><th>0-30</th><th>31-60</th><th>61-90</th><th>90+</th><th>Total</th></tr></thead>
           <tbody id="ap-body"></tbody>
+          <tfoot><tr id="ap-totals-row" style="border-top:2px solid var(--color-border); font-weight:700"></tr></tfoot>
         </table>
       </div>
       <p class="text-right" id="ap-total"></p>
@@ -40,6 +41,25 @@
           <td>${formatMoney(r.total_outstanding, "")}</td></tr>`
       )
       .join("");
+
+    const totals = ap.rows.reduce(
+      (acc, r) => {
+        acc.b0_30 += Number(r.bucket_0_30);
+        acc.b31_60 += Number(r.bucket_31_60);
+        acc.b61_90 += Number(r.bucket_61_90);
+        acc.b90_plus += Number(r.bucket_90_plus);
+        return acc;
+      },
+      { b0_30: 0, b31_60: 0, b61_90: 0, b90_plus: 0 }
+    );
+    document.getElementById("ap-totals-row").innerHTML = `
+      <td>Totals</td>
+      <td>${formatMoney(totals.b0_30, "")}</td>
+      <td>${formatMoney(totals.b31_60, "")}</td>
+      <td>${formatMoney(totals.b61_90, "")}</td>
+      <td>${formatMoney(totals.b90_plus, "")}</td>
+      <td>${formatMoney(ap.grand_total, "")}</td>
+    `;
     document.getElementById("ap-total").textContent = `Grand total outstanding: ${formatMoney(ap.grand_total, "")}`;
   }
 

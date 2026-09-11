@@ -8,7 +8,7 @@
     <div id="alerts"></div>
 
     <div class="card" id="create-card">
-      <h2>New account</h2>
+      <h2 id="form-title">New account</h2>
       <form id="account-form" class="grid grid-3">
         <div class="form-row"><label>Code</label><input id="acc_code" required /></div>
         <div class="form-row"><label>Name</label><input id="acc_name" required /></div>
@@ -21,7 +21,13 @@
             <option value="expense">Expense</option>
           </select>
         </div>
-        <div><button class="btn" type="submit">Create account</button></div>
+        <div class="form-row" id="status-row" hidden><label>Status</label>
+          <select id="acc_status"><option value="true">Active</option><option value="false">Inactive</option></select>
+        </div>
+        <div>
+          <button class="btn" type="submit" id="form-submit">Create account</button>
+          <button class="btn secondary" type="button" id="cancel-edit" hidden>Cancel</button>
+        </div>
       </form>
     </div>
 
@@ -29,7 +35,7 @@
       <h2>Chart of Accounts</h2>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Code</th><th>Name</th><th>Type</th><th></th></tr></thead>
+          <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Status</th><th></th></tr></thead>
           <tbody id="accounts-body"></tbody>
         </table>
       </div>
@@ -42,36 +48,117 @@
 <script src="/js/currency.js"></script>
 <script src="/js/nav.js"></script>
 <script>
+  let accounts = [];
+  let editingId = null;
+  let canManage = false;
+
+  function resetForm() {
+    editingId = null;
+    document.getElementById("account-form").reset();
+    document.getElementById("form-title").textContent = "New account";
+    document.getElementById("form-submit").textContent = "Create account";
+    document.getElementById("cancel-edit").hidden = true;
+    document.getElementById("acc_code").disabled = false;
+    document.getElementById("status-row").hidden = true;
+  }
+
+  function startEdit(account) {
+    editingId = account.id;
+    document.getElementById("acc_code").value = account.code;
+    document.getElementById("acc_code").disabled = true;
+    document.getElementById("acc_name").value = account.name;
+    document.getElementById("acc_type").value = account.type;
+    document.getElementById("acc_status").value = String(account.is_active);
+    document.getElementById("status-row").hidden = false;
+    document.getElementById("form-title").textContent = `Edit account ${account.code}`;
+    document.getElementById("form-submit").textContent = "Save changes";
+    document.getElementById("cancel-edit").hidden = false;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function toggleActive(account) {
+    const alerts = document.getElementById("alerts");
+    alerts.innerHTML = "";
+    try {
+      await api.patch(`/accounts/${account.id}`, { is_active: !account.is_active });
+      await loadAccounts();
+      alerts.innerHTML = `<div class="success-banner">Account ${account.is_active ? "deactivated" : "reactivated"}.</div>`;
+    } catch (err) {
+      alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not update account")}</div>`;
+    }
+  }
+
   async function loadAccounts() {
-    const accounts = await api.get("/accounts");
+    accounts = await api.get("/accounts");
     document.getElementById("accounts-body").innerHTML = accounts
-      .map((a) => `<tr><td>${a.code}</td><td>${escapeHtml(a.name)}</td><td>${a.type}</td><td><a href="/accounts.html?ledger=${a.id}">View ledger</a></td></tr>`)
+      .map(
+        (a) => `<tr>
+          <td>${a.code}</td>
+          <td>${escapeHtml(a.name)}</td>
+          <td>${a.type}</td>
+          <td>${statusBadge(a.is_active ? "active" : "inactive")}</td>
+          <td>
+            <a href="/accounts.html?ledger=${a.id}">View ledger</a>
+            ${
+              canManage
+                ? ` &middot; <a href="#" class="edit-link" data-id="${a.id}">Edit</a>
+                    &middot; <a href="#" class="toggle-link" data-id="${a.id}">${a.is_active ? "Deactivate" : "Reactivate"}</a>`
+                : ""
+            }
+          </td>
+        </tr>`
+      )
       .join("");
+
+    document.querySelectorAll(".edit-link").forEach((link) =>
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        startEdit(accounts.find((a) => a.id === Number(link.dataset.id)));
+      })
+    );
+    document.querySelectorAll(".toggle-link").forEach((link) =>
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        toggleActive(accounts.find((a) => a.id === Number(link.dataset.id)));
+      })
+    );
   }
 
   (async () => {
     const user = await initPage("Chart of Accounts");
     if (!user) return;
-    if (!["admin", "accountant"].includes(user.role)) {
+    canManage = ["admin", "accountant"].includes(user.role);
+    if (!canManage) {
       document.getElementById("create-card").style.display = "none";
     }
     await loadAccounts();
+
+    document.getElementById("cancel-edit").addEventListener("click", resetForm);
 
     document.getElementById("account-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const alerts = document.getElementById("alerts");
       alerts.innerHTML = "";
       try {
-        await api.post("/accounts", {
-          code: document.getElementById("acc_code").value,
-          name: document.getElementById("acc_name").value,
-          type: document.getElementById("acc_type").value,
-        });
-        e.target.reset();
+        if (editingId) {
+          await api.patch(`/accounts/${editingId}`, {
+            name: document.getElementById("acc_name").value,
+            type: document.getElementById("acc_type").value,
+            is_active: document.getElementById("acc_status").value === "true",
+          });
+          alerts.innerHTML = `<div class="success-banner">Account updated.</div>`;
+        } else {
+          await api.post("/accounts", {
+            code: document.getElementById("acc_code").value,
+            name: document.getElementById("acc_name").value,
+            type: document.getElementById("acc_type").value,
+          });
+          alerts.innerHTML = `<div class="success-banner">Account created.</div>`;
+        }
+        resetForm();
         await loadAccounts();
-        alerts.innerHTML = `<div class="success-banner">Account created.</div>`;
       } catch (err) {
-        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create account")}</div>`;
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not save account")}</div>`;
       }
     });
   })();
