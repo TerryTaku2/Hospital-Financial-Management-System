@@ -1,0 +1,154 @@
+<title>Purchase Requisitions — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card" id="create-card">
+      <h2>New purchase requisition</h2>
+      <p class="text-muted" style="margin-top:-8px">A requisition must be signed by the <strong>Medical Superintendent</strong>, the <strong>Matron</strong> and the <strong>Admin</strong> before a purchase order can be raised from it.</p>
+      <form id="req-form">
+        <div class="grid grid-3">
+          <div class="form-row"><label>Requesting department</label><input id="req_department" placeholder="e.g. Pharmacy, Maternity Ward" required /></div>
+          <div class="form-row"><label>Preferred supplier (optional)</label><select id="req_supplier"></select></div>
+          <div class="form-row"><label>Currency</label>
+            <select id="req_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
+          </div>
+        </div>
+        <div class="form-row"><label>Justification</label><input id="req_justification" maxlength="500" placeholder="Why is this needed?" /></div>
+
+        <h2>Items requested</h2>
+        <div id="lines-container"></div>
+        <button type="button" class="btn secondary" id="add-line">+ Add line</button>
+
+        <div class="mt-16">
+          <button class="btn" type="submit">Submit for signatures</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Purchase requisitions</h2>
+        <select id="status-filter" style="max-width:220px">
+          <option value="">All statuses</option>
+          <option value="pending_approval">Pending approval</option>
+          <option value="approved">Approved</option>
+          <option value="ordered">Ordered</option>
+          <option value="rejected">Rejected</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Requisition #</th><th>Department</th><th>Estimated total</th><th>Signatures</th><th>Status</th><th></th></tr></thead>
+          <tbody id="reqs-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  const CAN_RAISE = ["admin", "medical_superintendent", "matron", "accountant", "cashier"];
+  let currentUser = null;
+  let pharmacyItems = [];
+  let suppliers = [];
+
+  function addLineRow() {
+    const container = document.getElementById("lines-container");
+    const row = document.createElement("div");
+    row.className = "grid grid-3 line-row";
+    row.innerHTML = `
+      <div class="form-row">
+        <label>Item</label>
+        <select class="line-item" required>
+          ${pharmacyItems.map((i) => `<option value="${i.id}">${escapeHtml(i.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-row"><label>Quantity</label><input type="number" class="line-qty" value="1" min="0.01" step="0.01" required /></div>
+      <div class="form-row"><label>Estimated unit cost</label><input type="number" class="line-cost" step="0.01" min="0" required /></div>
+      <div><button type="button" class="btn secondary remove-line">Remove</button></div>
+    `;
+    row.querySelector(".remove-line").addEventListener("click", () => row.remove());
+    container.appendChild(row);
+  }
+
+  async function loadRequisitions() {
+    const filter = document.getElementById("status-filter").value;
+    const reqs = await api.get("/purchase-requisitions" + (filter ? `?status_filter=${filter}` : ""));
+    document.getElementById("reqs-body").innerHTML = reqs.length
+      ? reqs
+          .map((r) => `<tr>
+            <td><a href="/purchase-requisition-detail.html?id=${r.id}">${escapeHtml(r.requisition_number)}</a></td>
+            <td>${escapeHtml(r.department)}</td>
+            <td>${formatMoney(r.total, r.currency_code)}</td>
+            <td>${r.signatures.length} of 3</td>
+            <td>${statusBadge(r.status)}</td>
+            <td><a href="/purchase-requisition-detail.html?id=${r.id}">Open</a></td>
+          </tr>`)
+          .join("")
+      : `<tr><td colspan="6" class="text-muted">No purchase requisitions.</td></tr>`;
+  }
+
+  (async () => {
+    currentUser = await initPage("Purchase Requisitions");
+    if (!currentUser) return;
+
+    if (!CAN_RAISE.includes(currentUser.role)) {
+      document.getElementById("create-card").style.display = "none";
+    } else {
+      suppliers = await api.get("/suppliers");
+      document.getElementById("req_supplier").innerHTML =
+        `<option value="">— Choose later —</option>` +
+        suppliers.map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join("");
+
+      const items = await api.get(`/charge-items?branch_id=${currentUser.branch_id}`);
+      pharmacyItems = items.filter((i) => i.category === "Pharmacy");
+      if (pharmacyItems.length === 0) {
+        document.getElementById("req-form").innerHTML =
+          `<p class="text-muted">No pharmacy charge items exist for this branch yet — <a href="/charge-items.html">add one</a> first.</p>`;
+      } else {
+        addLineRow();
+        document.getElementById("add-line").addEventListener("click", addLineRow);
+      }
+    }
+
+    await loadRequisitions();
+    document.getElementById("status-filter").addEventListener("change", loadRequisitions);
+
+    const form = document.getElementById("req-form");
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      const lines = Array.from(document.querySelectorAll(".line-row")).map((row) => ({
+        charge_item_id: Number(row.querySelector(".line-item").value),
+        quantity: Number(row.querySelector(".line-qty").value),
+        estimated_unit_cost: Number(row.querySelector(".line-cost").value),
+      }));
+      const supplierId = document.getElementById("req_supplier").value;
+      try {
+        const req = await api.post("/purchase-requisitions", {
+          branch_id: currentUser.branch_id,
+          department: document.getElementById("req_department").value,
+          supplier_id: supplierId ? Number(supplierId) : null,
+          currency_code: document.getElementById("req_currency").value,
+          justification: document.getElementById("req_justification").value || null,
+          lines,
+        });
+        alerts.innerHTML = `<div class="success-banner">Requisition ${escapeHtml(req.requisition_number)} submitted for signatures. <a href="/purchase-requisition-detail.html?id=${req.id}">Open it</a>.</div>`;
+        await loadRequisitions();
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not create requisition")}</div>`;
+      }
+    });
+  })();
+</script>

@@ -29,13 +29,25 @@
 
     <div class="card" id="payment-card">
       <h2>Pay supplier</h2>
-      <form id="payment-form" class="grid grid-3">
-        <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="pay_amount" required /></div>
+      <p class="text-muted" style="margin-top:-8px">Payments go out on a <strong>cash voucher</strong>: the Accountant signs to confirm the payment can proceed, then the Accounts Clerk signs for the cash disbursement. Nothing is posted to the ledger until the clerk signs.</p>
+      <form id="voucher-form" class="grid grid-3">
+        <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="cv_amount" required /></div>
         <div class="form-row"><label>Method</label>
-          <select id="pay_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
+          <select id="cv_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
         </div>
-        <div><button class="btn" type="submit">Record payment</button></div>
+        <div class="form-row"><label>Being payment of</label><input id="cv_description" maxlength="300" placeholder="e.g. Invoice #1042" /></div>
+        <div><button class="btn" type="submit">Raise cash voucher</button></div>
       </form>
+    </div>
+
+    <div class="card">
+      <h2>Cash vouchers</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Voucher #</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead>
+          <tbody id="vouchers-body"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card">
@@ -59,7 +71,7 @@
 
   function renderActions() {
     const canManage = ["admin", "cashier", "accountant"].includes(currentUser.role);
-    const canPay = ["admin", "accountant"].includes(currentUser.role);
+    const canPay = ["admin", "accountant", "accounts_clerk"].includes(currentUser.role);
     const actions = [];
     if (po.status === "draft" && canManage) {
       actions.push(`<button class="btn" id="receive-btn">Receive goods</button>`);
@@ -91,6 +103,13 @@
     document.getElementById("po-total").textContent =
       `${formatMoney(po.total, po.currency_code)} (paid ${formatMoney(po.amount_paid, po.currency_code)})`;
     renderActions();
+
+    const vouchers = await api.get(`/cash-vouchers?purchase_order_id=${poId}`);
+    document.getElementById("vouchers-body").innerHTML = vouchers.length
+      ? vouchers
+          .map((v) => `<tr><td><a href="/cash-voucher-detail.html?id=${v.id}">${escapeHtml(v.voucher_number)}</a></td><td>${formatMoney(v.amount, v.currency_code)}</td><td>${v.method}</td><td>${statusBadge(v.status)}</td></tr>`)
+          .join("")
+      : `<tr><td colspan="4" class="text-muted">No cash vouchers yet.</td></tr>`;
 
     const payments = await api.get(`/purchase-orders/${poId}/payments`);
     document.getElementById("payments-body").innerHTML = payments
@@ -129,27 +148,23 @@
     if (!currentUser) return;
     await load();
 
-    document.getElementById("payment-form").addEventListener("submit", async (e) => {
+    document.getElementById("voucher-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const alerts = document.getElementById("alerts");
       alerts.innerHTML = "";
       try {
-        await api.post(
-          `/purchase-orders/${poId}/pay`,
-          {
-            branch_id: currentUser.branch_id,
-            purchase_order_id: Number(poId),
-            method: document.getElementById("pay_method").value,
-            currency_code: po.currency_code,
-            amount: Number(document.getElementById("pay_amount").value),
-          },
-          { "Idempotency-Key": newIdempotencyKey() }
-        );
+        const voucher = await api.post("/cash-vouchers", {
+          branch_id: po.branch_id,
+          purchase_order_id: Number(poId),
+          method: document.getElementById("cv_method").value,
+          amount: Number(document.getElementById("cv_amount").value),
+          description: document.getElementById("cv_description").value || null,
+        });
         e.target.reset();
         await load();
-        alerts.innerHTML = `<div class="success-banner">Payment recorded.</div>`;
+        alerts.innerHTML = `<div class="success-banner">Cash voucher ${escapeHtml(voucher.voucher_number)} raised — it now needs the Accountant's signature. <a href="/cash-voucher-detail.html?id=${voucher.id}">Open it</a>.</div>`;
       } catch (err) {
-        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not record payment")}</div>`;
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not raise cash voucher")}</div>`;
       }
     });
   })();

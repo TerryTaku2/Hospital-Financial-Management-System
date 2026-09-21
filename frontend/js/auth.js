@@ -29,4 +29,7 @@ const ROLE_LABELS = {
   cashier: "Cashier",
   auditor: "Auditor",
   clinician: "Clinician",
+  medical_superintendent: "Medical Superintendent",
+  matron: "Matron",
+  accounts_clerk: "Accounts Clerk",
 };

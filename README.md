@@ -22,8 +22,31 @@ Where the pharmacy orders stock from:
 - **Charge Items** (`/charge-items.html`) — the price list invoices are billed from; a Pharmacy-category item also carries `quantity_on_hand` and an optional `reorder_level`.
 - **Purchase Orders** (`/purchase-orders.html`) — raised against a supplier for one or more charge items. A draft PO has no accounting or stock impact.
   - **Receive** → increments `quantity_on_hand` for each line and posts `Dr Cost of Drugs & Consumables (5000) / Cr Accounts Payable - Suppliers (2200)`. This is expense-on-receipt costing (not perpetual/COGS-on-sale inventory valuation — see limitations below).
-  - **Pay supplier** → posts `Dr Accounts Payable - Suppliers / Cr Cash or Bank`, same partial/full payment mechanics as patient payments.
+  - **Pay supplier** → posts `Dr Accounts Payable - Suppliers / Cr Cash or Bank`, same partial/full payment mechanics as patient payments. The UI raises a **cash voucher** for this (see below) rather than paying directly.
 - **Dispensing**: when a Pharmacy-category invoice line is finalized, `quantity_on_hand` decrements automatically (and restores if the invoice is later voided). This is **soft** tracking — it never blocks billing on low or negative stock, it's informational (pair it with `reorder_level` to know when to reorder).
+
+### Purchase requisitions (three signatures)
+
+**Purchase Requisitions** (`/purchase-requisitions.html`) are the internal request that comes before a purchase order. Anyone in Admin, Medical Superintendent, Matron, Accountant or Cashier can raise one (department, items, estimated costs, justification). It then needs **three signatures**, in any order:
+
+1. Medical Superintendent
+2. Matron
+3. Admin
+
+Each signature is the signed-in user's own click, recorded with their name and a timestamp; a role can sign once per requisition, and the requisition becomes **approved** only when all three are in. Any of the three can instead **reject** it (with a reason). An approved requisition can be turned into a draft purchase order (`Create purchase order` on its page), which marks it **ordered** and links the two. Requisitions print with the three signature lines filled in.
+
+### Cash vouchers (Accountant + Accounts Clerk signatures)
+
+Paying a supplier goes out on a **Cash Voucher** (`/cash-vouchers.html`), raised from a received purchase order by an Accounts Clerk, Accountant or Admin:
+
+1. **Accountant signs** to confirm the payment may proceed (or rejects it with a reason). The accountant who prepared a voucher can't confirm it themselves.
+2. **Accounts Clerk signs** for the cash disbursement. Only now is the supplier payment posted to the ledger and the purchase order's balance reduced.
+
+Open vouchers count against the purchase order's balance, so two vouchers can't over-commit it. The voucher prints with both signature blocks.
+
+The three new roles — `medical_superintendent`, `matron`, `accounts_clerk` — are created from **Users** like any other role.
+
+Not enforced yet: the older direct endpoint `POST /api/purchase-orders/{id}/pay` still exists (the UI no longer uses it), and a purchase order can still be created without a requisition.
 
 ## Running it locally (no Docker required)
 
@@ -66,6 +89,9 @@ Log in as any of:
 | `accountant1` | `Demo1234!` | Accountant |
 | `auditor1` | `Demo1234!` | Auditor |
 | `clinician1` | `Demo1234!` | Clinician |
+| `superintendent1` | `Demo1234!` | Medical Superintendent |
+| `matron1` | `Demo1234!` | Matron |
+| `clerk1` | `Demo1234!` | Accounts Clerk |
 
 There's also `python -m app.seed_investor_demo` for a much larger one-off dataset (three branches, several hundred patients each, a year of history) — see the docstring in `backend/app/seed_investor_demo.py`. Don't combine this with demo mode below: demo mode wipes the whole database, including anything this script seeded.
 

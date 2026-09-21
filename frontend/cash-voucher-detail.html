@@ -1,0 +1,220 @@
+<title>Cash Voucher — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2 id="cv-title">Loading…</h2>
+        <div id="cv-status"></div>
+      </div>
+      <p class="text-muted" id="cv-meta"></p>
+      <p id="cv-rejection" class="error-banner" style="display:none"></p>
+      <div id="cv-actions"></div>
+    </div>
+
+    <div class="card">
+      <h2>Payment details</h2>
+      <div class="table-scroll">
+        <table><tbody id="cv-details"></tbody></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Signatures</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Step</th><th>Signed by</th><th>Date</th></tr></thead>
+          <tbody id="sig-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="print-doc" id="print-voucher">
+  <div class="print-header">
+    <div>
+      <h1 id="p-branch"></h1>
+      <div id="p-branch-address"></div>
+    </div>
+    <div style="text-align:right">
+      <h2 style="margin:0">CASH VOUCHER</h2>
+      <div id="p-number"></div>
+      <div id="p-date"></div>
+      <div id="p-status"></div>
+    </div>
+  </div>
+  <table>
+    <tbody id="p-details"></tbody>
+  </table>
+  <div class="print-totals">
+    <div class="grand-total"><span>Amount</span><span id="p-amount"></span></div>
+  </div>
+  <div style="display:flex; gap:32px; margin-top:64px" id="p-signatures"></div>
+  <div class="print-footer">Printed on <span id="p-timestamp"></span> — Hospital Financial Management System</div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  const voucherId = new URLSearchParams(window.location.search).get("id");
+  const CAN_CANCEL = ["admin", "accountant", "accounts_clerk"];
+  let currentUser = null;
+  let voucher = null;
+  let po = null;
+  let supplier = null;
+  let branch = null;
+
+  const fmtDate = (iso) => new Date(iso).toLocaleString();
+
+  function showError(err, fallback) {
+    document.getElementById("alerts").innerHTML = `<div class="error-banner">${escapeHtml(err.detail || fallback)}</div>`;
+  }
+
+  function detailRows() {
+    return [
+      ["Pay to", supplier ? supplier.name : "—"],
+      ["Purchase order", po ? po.po_number : `#${voucher.purchase_order_id}`],
+      ["Payment method", voucher.method],
+      ["Being payment of", voucher.description || "—"],
+      ["Amount", formatMoney(voucher.amount, voucher.currency_code)],
+    ];
+  }
+
+  function renderActions() {
+    const actions = [`<button class="btn secondary" id="print-btn">Print</button>`];
+    const role = currentUser.role;
+    if (voucher.status === "pending_confirmation" && role === "accountant") {
+      actions.push(`<button class="btn" id="confirm-btn">Sign — confirm payment can proceed</button>`);
+      actions.push(`<button class="btn danger" id="reject-btn">Reject</button>`);
+    }
+    if (voucher.status === "confirmed" && role === "accounts_clerk") {
+      actions.push(`<button class="btn" id="disburse-btn">Sign — cash disbursed</button>`);
+    }
+    if (["pending_confirmation", "confirmed"].includes(voucher.status) && CAN_CANCEL.includes(role)) {
+      actions.push(`<button class="btn secondary" id="cancel-btn">Cancel voucher</button>`);
+    }
+    document.getElementById("cv-actions").innerHTML = actions.join(" ");
+
+    document.getElementById("print-btn").addEventListener("click", printVoucher);
+    const bind = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
+    bind("confirm-btn", confirmVoucher);
+    bind("reject-btn", rejectVoucher);
+    bind("disburse-btn", disburseVoucher);
+    bind("cancel-btn", cancelVoucher);
+  }
+
+  function signatureSteps() {
+    return [
+      { label: "Accountant — confirmed payment may proceed", name: voucher.accountant_name, at: voucher.accountant_signed_at },
+      { label: "Accounts Clerk — cash disbursed", name: voucher.clerk_name, at: voucher.clerk_signed_at },
+    ];
+  }
+
+  async function load() {
+    voucher = await api.get(`/cash-vouchers/${voucherId}`);
+    const [poData, suppliers, branches] = await Promise.all([
+      api.get(`/purchase-orders/${voucher.purchase_order_id}`),
+      api.get("/suppliers"),
+      api.get("/branches"),
+    ]);
+    po = poData;
+    supplier = suppliers.find((s) => s.id === po.supplier_id) || null;
+    branch = branches.find((b) => b.id === voucher.branch_id) || null;
+
+    document.getElementById("cv-title").textContent = voucher.voucher_number;
+    document.getElementById("cv-status").innerHTML = statusBadge(voucher.status);
+    document.getElementById("cv-meta").textContent = `Raised ${fmtDate(voucher.created_at)}`;
+    const rejection = document.getElementById("cv-rejection");
+    if (voucher.rejection_reason && ["rejected", "cancelled"].includes(voucher.status)) {
+      rejection.style.display = "block";
+      rejection.textContent = `${voucher.status === "rejected" ? "Rejected" : "Cancelled"}: ${voucher.rejection_reason}`;
+    } else {
+      rejection.style.display = "none";
+    }
+    document.getElementById("cv-details").innerHTML = detailRows()
+      .map(([k, v]) => `<tr><th style="width:200px">${k}</th><td>${escapeHtml(v)}</td></tr>`)
+      .join("");
+    document.getElementById("sig-body").innerHTML = signatureSteps()
+      .map((s) => `<tr><td>${s.label}</td><td>${s.name ? escapeHtml(s.name) : `<span class="text-muted">Awaiting signature</span>`}</td><td>${s.at ? fmtDate(s.at) : ""}</td></tr>`)
+      .join("");
+    renderActions();
+  }
+
+  async function act(fn, successMessage, fallback) {
+    document.getElementById("alerts").innerHTML = "";
+    try {
+      await fn();
+      await load();
+      document.getElementById("alerts").innerHTML = `<div class="success-banner">${successMessage}</div>`;
+    } catch (err) {
+      showError(err, fallback);
+    }
+  }
+
+  const confirmVoucher = () =>
+    act(() => api.post(`/cash-vouchers/${voucherId}/confirm`, {}), "Signed — the payment can now proceed to disbursement.", "Could not confirm voucher");
+
+  const disburseVoucher = () => {
+    if (!window.confirm(`Confirm you have disbursed ${formatMoney(voucher.amount, voucher.currency_code)}? This posts the supplier payment to the ledger.`)) return;
+    act(() => api.post(`/cash-vouchers/${voucherId}/disburse`, {}), "Signed — cash disbursed and payment posted to the general ledger.", "Could not disburse voucher");
+  };
+
+  function rejectVoucher() {
+    const reason = window.prompt("Reason for rejecting this voucher:");
+    if (!reason) return;
+    act(() => api.post(`/cash-vouchers/${voucherId}/reject`, { reason }), "Voucher rejected.", "Could not reject voucher");
+  }
+
+  function cancelVoucher() {
+    const reason = window.prompt("Reason for cancelling this voucher:");
+    if (!reason) return;
+    act(() => api.post(`/cash-vouchers/${voucherId}/cancel`, { reason }), "Voucher cancelled.", "Could not cancel voucher");
+  }
+
+  function printVoucher() {
+    document.getElementById("p-branch").textContent = branch ? branch.name : "";
+    document.getElementById("p-branch-address").textContent = branch && branch.address ? branch.address : "";
+    document.getElementById("p-number").textContent = voucher.voucher_number;
+    document.getElementById("p-date").textContent = fmtDate(voucher.created_at);
+    document.getElementById("p-status").textContent = voucher.status.replace(/_/g, " ").toUpperCase();
+    document.getElementById("p-details").innerHTML = detailRows()
+      .filter(([k]) => k !== "Amount")
+      .map(([k, v]) => `<tr><th style="width:200px">${k}</th><td>${escapeHtml(v)}</td></tr>`)
+      .join("");
+    document.getElementById("p-amount").textContent = formatMoney(voucher.amount, voucher.currency_code);
+    document.getElementById("p-signatures").innerHTML = [
+      { title: "Accountant", note: "Confirmed — payment may proceed", name: voucher.accountant_name, at: voucher.accountant_signed_at },
+      { title: "Accounts Clerk", note: "Cash disbursed", name: voucher.clerk_name, at: voucher.clerk_signed_at },
+    ]
+      .map((s) => `<div style="flex:1">
+        <div style="min-height:40px; border-bottom:1px solid #000; padding-top:16px">${s.name ? escapeHtml(s.name) : ""}</div>
+        <div style="font-weight:600; margin-top:4px">${s.title}</div>
+        <div style="font-size:12px; color:#555">${s.note}</div>
+        <div style="font-size:12px; color:#555">${s.at ? fmtDate(s.at) : "Date: ____________"}</div>
+      </div>`)
+      .join("");
+    document.getElementById("p-timestamp").textContent = new Date().toLocaleString();
+
+    document.querySelectorAll(".print-doc").forEach((el) => el.classList.remove("print-only"));
+    document.getElementById("print-voucher").classList.add("print-only");
+    window.print();
+  }
+
+  (async () => {
+    currentUser = await initPage("Cash Voucher");
+    if (!currentUser) return;
+    try {
+      await load();
+    } catch (err) {
+      showError(err, "Could not load voucher");
+    }
+  })();
+</script>

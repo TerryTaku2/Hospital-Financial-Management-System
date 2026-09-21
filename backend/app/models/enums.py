@@ -7,6 +7,9 @@ class RoleEnum(str, enum.Enum):
     CASHIER = "cashier"
     AUDITOR = "auditor"
     CLINICIAN = "clinician"
+    MEDICAL_SUPERINTENDENT = "medical_superintendent"
+    MATRON = "matron"
+    ACCOUNTS_CLERK = "accounts_clerk"
 
 
 class AccountType(str, enum.Enum):
@@ -67,6 +70,31 @@ class PurchaseOrderStatus(str, enum.Enum):
     RECEIVED = "received"
     PARTIALLY_PAID = "partially_paid"
     PAID = "paid"
+    CANCELLED = "cancelled"
+
+
+class RequisitionStatus(str, enum.Enum):
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ORDERED = "ordered"
+    CANCELLED = "cancelled"
+
+
+class RequisitionSignatory(str, enum.Enum):
+    """The three sign-offs a purchase requisition needs. Values match the
+    RoleEnum value of the user who is allowed to give that signature."""
+
+    MEDICAL_SUPERINTENDENT = "medical_superintendent"
+    MATRON = "matron"
+    ADMIN = "admin"
+
+
+class CashVoucherStatus(str, enum.Enum):
+    PENDING_CONFIRMATION = "pending_confirmation"
+    CONFIRMED = "confirmed"
+    DISBURSED = "disbursed"
+    REJECTED = "rejected"
     CANCELLED = "cancelled"
 
 

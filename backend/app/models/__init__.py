@@ -11,13 +11,16 @@ from app.models.inventory import StockAdjustment, StockBalance, StockRequisition
 from app.models.patient import Patient
 from app.models.payroll import PayrollRun, PayslipItem
 from app.models.procurement import PurchaseOrder, PurchaseOrderLine, Supplier, SupplierPayment
+from app.models.requisition import PurchaseRequisition, PurchaseRequisitionLine, RequisitionSignature
 from app.models.user import User
+from app.models.voucher import CashVoucher
 
 __all__ = [
     "Account",
     "JournalEntry",
     "JournalLine",
     "Asset",
+    "CashVoucher",
     "AuditLog",
     "ChargeItem",
     "Deposit",
@@ -43,6 +46,9 @@ __all__ = [
     "PayslipItem",
     "PurchaseOrder",
     "PurchaseOrderLine",
+    "PurchaseRequisition",
+    "PurchaseRequisitionLine",
+    "RequisitionSignature",
     "Supplier",
     "SupplierPayment",
     "User",

@@ -1,0 +1,261 @@
+<title>Purchase Requisition — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2 id="req-title">Loading…</h2>
+        <div id="req-status"></div>
+      </div>
+      <p class="text-muted" id="req-meta"></p>
+      <p id="req-justification"></p>
+      <p id="req-rejection" class="error-banner" style="display:none"></p>
+      <div id="req-actions"></div>
+    </div>
+
+    <div class="card">
+      <h2>Items requested</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Item</th><th>Qty</th><th>Est. unit cost</th><th>Amount</th></tr></thead>
+          <tbody id="lines-body"></tbody>
+        </table>
+      </div>
+      <p class="text-right"><strong>Estimated total: <span id="req-total"></span></strong></p>
+    </div>
+
+    <div class="card">
+      <h2>Signatures</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Signatory</th><th>Signed by</th><th>Date</th><th></th></tr></thead>
+          <tbody id="sig-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="po-card" style="display:none">
+      <h2>Purchase order</h2>
+      <div id="po-card-body"></div>
+    </div>
+  </div>
+</div>
+
+<div class="print-doc" id="print-requisition">
+  <div class="print-header">
+    <div>
+      <h1 id="p-branch"></h1>
+      <div id="p-branch-address"></div>
+    </div>
+    <div style="text-align:right">
+      <h2 style="margin:0">PURCHASE REQUISITION</h2>
+      <div id="p-number"></div>
+      <div id="p-date"></div>
+      <div id="p-status"></div>
+    </div>
+  </div>
+  <div style="margin-bottom:16px">
+    <div><strong>Department:</strong> <span id="p-department"></span></div>
+    <div><strong>Preferred supplier:</strong> <span id="p-supplier"></span></div>
+    <div><strong>Justification:</strong> <span id="p-justification"></span></div>
+  </div>
+  <table>
+    <thead><tr><th>Item</th><th>Qty</th><th>Est. unit cost</th><th>Amount</th></tr></thead>
+    <tbody id="p-lines"></tbody>
+  </table>
+  <div class="print-totals">
+    <div class="grand-total"><span>Estimated total</span><span id="p-total"></span></div>
+  </div>
+  <div style="display:flex; gap:32px; margin-top:64px" id="p-signatures"></div>
+  <div class="print-footer">Printed on <span id="p-timestamp"></span> — Hospital Financial Management System</div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  const reqId = new URLSearchParams(window.location.search).get("id");
+  const SIGNATORIES = [
+    { key: "medical_superintendent", label: "Medical Superintendent" },
+    { key: "matron", label: "Matron" },
+    { key: "admin", label: "Admin" },
+  ];
+  const CAN_RAISE_PO = ["admin", "cashier", "accountant"];
+  let currentUser = null;
+  let req = null;
+  let suppliers = [];
+  let branch = null;
+
+  const fmtDate = (iso) => new Date(iso).toLocaleString();
+  const supplierName = (id) => (suppliers.find((s) => s.id === id) || {}).name || "—";
+
+  function showError(err, fallback) {
+    document.getElementById("alerts").innerHTML = `<div class="error-banner">${escapeHtml(err.detail || fallback)}</div>`;
+  }
+
+  function renderSignatures() {
+    const pending = req.status === "pending_approval";
+    const mySlot = SIGNATORIES.find((s) => s.key === currentUser.role);
+    document.getElementById("sig-body").innerHTML = SIGNATORIES.map((s) => {
+      const sig = req.signatures.find((x) => x.signatory === s.key);
+      const canSign = pending && !sig && mySlot && mySlot.key === s.key;
+      return `<tr>
+        <td>${s.label}</td>
+        <td>${sig ? escapeHtml(sig.signed_by_name) : `<span class="text-muted">Awaiting signature</span>`}</td>
+        <td>${sig ? fmtDate(sig.signed_at) : ""}</td>
+        <td>${canSign ? `<button class="btn" id="sign-btn">Sign as ${s.label}</button>` : ""}</td>
+      </tr>`;
+    }).join("");
+    const signBtn = document.getElementById("sign-btn");
+    if (signBtn) signBtn.addEventListener("click", signRequisition);
+  }
+
+  function renderActions() {
+    const pending = req.status === "pending_approval";
+    const isSignatory = SIGNATORIES.some((s) => s.key === currentUser.role);
+    const canCancel = pending && (currentUser.role === "admin" || req.requested_by_id === currentUser.id);
+    const actions = [`<button class="btn secondary" id="print-btn">Print</button>`];
+    if (pending && isSignatory) actions.push(`<button class="btn danger" id="reject-btn">Reject</button>`);
+    if (canCancel) actions.push(`<button class="btn secondary" id="cancel-btn">Cancel requisition</button>`);
+    document.getElementById("req-actions").innerHTML = actions.join(" ");
+
+    document.getElementById("print-btn").addEventListener("click", printRequisition);
+    const rejectBtn = document.getElementById("reject-btn");
+    if (rejectBtn) rejectBtn.addEventListener("click", rejectRequisition);
+    const cancelBtn = document.getElementById("cancel-btn");
+    if (cancelBtn) cancelBtn.addEventListener("click", cancelRequisition);
+  }
+
+  function renderPoCard() {
+    const card = document.getElementById("po-card");
+    const body = document.getElementById("po-card-body");
+    if (req.status === "ordered" && req.purchase_order_id) {
+      card.style.display = "block";
+      body.innerHTML = `<p>A purchase order has been raised from this requisition. <a href="/purchase-order-detail.html?id=${req.purchase_order_id}">Open purchase order</a></p>`;
+    } else if (req.status === "approved" && CAN_RAISE_PO.includes(currentUser.role)) {
+      card.style.display = "block";
+      const supplierPicker = req.supplier_id
+        ? `<p class="text-muted">Supplier: ${escapeHtml(supplierName(req.supplier_id))}</p>`
+        : `<div class="form-row"><label>Supplier</label><select id="po_supplier">${suppliers
+            .map((s) => `<option value="${s.id}">${escapeHtml(s.name)}</option>`)
+            .join("")}</select></div>`;
+      body.innerHTML = `
+        <p>All three signatures are in. Raise a draft purchase order from this requisition's items and estimated costs.</p>
+        ${supplierPicker}
+        <button class="btn" id="raise-po-btn">Create purchase order</button>`;
+      document.getElementById("raise-po-btn").addEventListener("click", raisePurchaseOrder);
+    } else {
+      card.style.display = "none";
+    }
+  }
+
+  async function load() {
+    req = await api.get(`/purchase-requisitions/${reqId}`);
+    document.getElementById("req-title").textContent = req.requisition_number;
+    document.getElementById("req-status").innerHTML = statusBadge(req.status);
+    document.getElementById("req-meta").textContent =
+      `${req.department} · ${req.currency_code} · Raised ${fmtDate(req.created_at)}` +
+      (req.supplier_id ? ` · Preferred supplier: ${supplierName(req.supplier_id)}` : "");
+    document.getElementById("req-justification").textContent = req.justification ? `Justification: ${req.justification}` : "";
+    const rejection = document.getElementById("req-rejection");
+    if (req.rejection_reason && ["rejected", "cancelled"].includes(req.status)) {
+      rejection.style.display = "block";
+      rejection.textContent = `${req.status === "rejected" ? "Rejected" : "Cancelled"}: ${req.rejection_reason}`;
+    } else {
+      rejection.style.display = "none";
+    }
+    document.getElementById("lines-body").innerHTML = req.lines
+      .map((l) => `<tr><td>${escapeHtml(l.description)}</td><td>${l.quantity}</td><td>${formatMoney(l.estimated_unit_cost, "")}</td><td>${formatMoney(l.amount, "")}</td></tr>`)
+      .join("");
+    document.getElementById("req-total").textContent = formatMoney(req.total, req.currency_code);
+    renderActions();
+    renderSignatures();
+    renderPoCard();
+  }
+
+  async function act(fn, successMessage, fallback) {
+    document.getElementById("alerts").innerHTML = "";
+    try {
+      await fn();
+      await load();
+      if (successMessage) document.getElementById("alerts").innerHTML = `<div class="success-banner">${successMessage}</div>`;
+    } catch (err) {
+      showError(err, fallback);
+    }
+  }
+
+  const signRequisition = () =>
+    act(() => api.post(`/purchase-requisitions/${reqId}/sign`, {}), "Your signature has been recorded.", "Could not sign requisition");
+
+  function rejectRequisition() {
+    const reason = window.prompt("Reason for rejecting this requisition:");
+    if (!reason) return;
+    act(() => api.post(`/purchase-requisitions/${reqId}/reject`, { reason }), "Requisition rejected.", "Could not reject requisition");
+  }
+
+  function cancelRequisition() {
+    const reason = window.prompt("Reason for cancelling this requisition:");
+    if (!reason) return;
+    act(() => api.post(`/purchase-requisitions/${reqId}/cancel`, { reason }), "Requisition cancelled.", "Could not cancel requisition");
+  }
+
+  async function raisePurchaseOrder() {
+    const picker = document.getElementById("po_supplier");
+    document.getElementById("alerts").innerHTML = "";
+    try {
+      const po = await api.post(`/purchase-requisitions/${reqId}/purchase-order`, {
+        supplier_id: picker ? Number(picker.value) : null,
+      });
+      window.location.href = `/purchase-order-detail.html?id=${po.id}`;
+    } catch (err) {
+      showError(err, "Could not create purchase order");
+    }
+  }
+
+  function printRequisition() {
+    document.getElementById("p-branch").textContent = branch ? branch.name : "";
+    document.getElementById("p-branch-address").textContent = branch && branch.address ? branch.address : "";
+    document.getElementById("p-number").textContent = req.requisition_number;
+    document.getElementById("p-date").textContent = fmtDate(req.created_at);
+    document.getElementById("p-status").textContent = req.status.replace(/_/g, " ").toUpperCase();
+    document.getElementById("p-department").textContent = req.department;
+    document.getElementById("p-supplier").textContent = req.supplier_id ? supplierName(req.supplier_id) : "—";
+    document.getElementById("p-justification").textContent = req.justification || "—";
+    document.getElementById("p-lines").innerHTML = req.lines
+      .map((l) => `<tr><td>${escapeHtml(l.description)}</td><td>${l.quantity}</td><td>${formatMoney(l.estimated_unit_cost, "")}</td><td>${formatMoney(l.amount, "")}</td></tr>`)
+      .join("");
+    document.getElementById("p-total").textContent = formatMoney(req.total, req.currency_code);
+    document.getElementById("p-signatures").innerHTML = SIGNATORIES.map((s) => {
+      const sig = req.signatures.find((x) => x.signatory === s.key);
+      return `<div style="flex:1">
+        <div style="min-height:40px; border-bottom:1px solid #000; padding-top:16px">${sig ? escapeHtml(sig.signed_by_name) : ""}</div>
+        <div style="font-weight:600; margin-top:4px">${s.label}</div>
+        <div style="font-size:12px; color:#555">${sig ? fmtDate(sig.signed_at) : "Date: ____________"}</div>
+      </div>`;
+    }).join("");
+    document.getElementById("p-timestamp").textContent = new Date().toLocaleString();
+
+    document.querySelectorAll(".print-doc").forEach((el) => el.classList.remove("print-only"));
+    document.getElementById("print-requisition").classList.add("print-only");
+    window.print();
+  }
+
+  (async () => {
+    currentUser = await initPage("Purchase Requisition");
+    if (!currentUser) return;
+    const [supplierList, branches] = await Promise.all([api.get("/suppliers"), api.get("/branches")]);
+    suppliers = supplierList;
+    try {
+      await load();
+      branch = branches.find((b) => b.id === req.branch_id) || null;
+    } catch (err) {
+      showError(err, "Could not load requisition");
+    }
+  })();
+</script>

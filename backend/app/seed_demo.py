@@ -74,6 +74,9 @@ async def seed_demo() -> None:
             "accountant1": ("Tendai Chirwa", RoleEnum.ACCOUNTANT),
             "auditor1": ("Blessing Ncube", RoleEnum.AUDITOR),
             "clinician1": ("Dr. Simba Mangwana", RoleEnum.CLINICIAN),
+            "superintendent1": ("Dr. Rudo Madziva", RoleEnum.MEDICAL_SUPERINTENDENT),
+            "matron1": ("Nyasha Dube", RoleEnum.MATRON),
+            "clerk1": ("Tatenda Moyo", RoleEnum.ACCOUNTS_CLERK),
         }
         users: dict[str, User] = {}
         for username, (full_name, role) in role_users.items():

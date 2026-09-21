@@ -13,6 +13,7 @@ from app.routers import (
     audit_logs,
     auth,
     branches,
+    cash_vouchers,
     charge_items,
     claims,
     currencies,
@@ -26,6 +27,7 @@ from app.routers import (
     payments,
     payroll,
     purchase_orders,
+    purchase_requisitions,
     reports,
     stock,
     stock_requisitions,
@@ -58,7 +60,9 @@ app.include_router(payments.router)
 app.include_router(deposits.router)
 app.include_router(claims.router)
 app.include_router(suppliers.router)
+app.include_router(purchase_requisitions.router)
 app.include_router(purchase_orders.router)
+app.include_router(cash_vouchers.router)
 app.include_router(employees.router)
 app.include_router(payroll.router)
 app.include_router(assets.router)

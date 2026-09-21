@@ -1,0 +1,70 @@
+<title>Cash Vouchers — Hospital Finance</title>
+<link rel="stylesheet" href="/css/style.css" />
+
+<div class="app-shell">
+  <div class="sidebar" id="sidebar-root"></div>
+  <div class="main">
+    <div class="topbar" id="topbar-root"></div>
+    <div id="alerts"></div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Cash vouchers</h2>
+        <select id="status-filter" style="max-width:240px">
+          <option value="">All statuses</option>
+          <option value="pending_confirmation">Awaiting Accountant</option>
+          <option value="confirmed">Awaiting cash disbursement</option>
+          <option value="disbursed">Disbursed</option>
+          <option value="rejected">Rejected</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <p class="text-muted" style="margin-top:-8px">Supplier payments go out on a voucher: the <strong>Accountant</strong> signs to confirm the payment can proceed, then the <strong>Accounts Clerk</strong> signs for the cash disbursement. Raise a voucher from a received <a href="/purchase-orders.html">purchase order</a>.</p>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Voucher #</th><th>Purchase order</th><th>Payee</th><th>Amount</th><th>Method</th><th>Status</th><th></th></tr></thead>
+          <tbody id="vouchers-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/currency.js"></script>
+<script src="/js/nav.js"></script>
+<script>
+  let pos = [];
+  let suppliers = [];
+
+  async function loadVouchers() {
+    const filter = document.getElementById("status-filter").value;
+    const vouchers = await api.get("/cash-vouchers" + (filter ? `?status_filter=${filter}` : ""));
+    document.getElementById("vouchers-body").innerHTML = vouchers.length
+      ? vouchers
+          .map((v) => {
+            const po = pos.find((p) => p.id === v.purchase_order_id);
+            const supplier = po && suppliers.find((s) => s.id === po.supplier_id);
+            return `<tr>
+              <td><a href="/cash-voucher-detail.html?id=${v.id}">${escapeHtml(v.voucher_number)}</a></td>
+              <td>${po ? `<a href="/purchase-order-detail.html?id=${po.id}">${escapeHtml(po.po_number)}</a>` : "#" + v.purchase_order_id}</td>
+              <td>${supplier ? escapeHtml(supplier.name) : "—"}</td>
+              <td>${formatMoney(v.amount, v.currency_code)}</td>
+              <td>${v.method}</td>
+              <td>${statusBadge(v.status)}</td>
+              <td><a href="/cash-voucher-detail.html?id=${v.id}">Open</a></td>
+            </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="7" class="text-muted">No cash vouchers.</td></tr>`;
+  }
+
+  (async () => {
+    const user = await initPage("Cash Vouchers");
+    if (!user) return;
+    [pos, suppliers] = await Promise.all([api.get("/purchase-orders"), api.get("/suppliers")]);
+    await loadVouchers();
+    document.getElementById("status-filter").addEventListener("change", loadVouchers);
+  })();
+</script>

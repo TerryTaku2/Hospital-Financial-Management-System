@@ -36,7 +36,8 @@ const NAV_ITEMS = [
 
   { href: "/stores.html", label: "Stores", icon: "box", roles: ["admin", "cashier", "accountant", "auditor"], section: "Stores" },
   { href: "/suppliers.html", label: "Suppliers", icon: "truck", roles: ["admin", "cashier", "accountant", "auditor"], section: "Stores" },
-  { href: "/purchase-orders.html", label: "Purchase Orders", icon: "clipboardList", roles: ["admin", "cashier", "accountant", "auditor"], section: "Stores" },
+  { href: "/purchase-requisitions.html", label: "Purchase Requisitions", icon: "fileLines", roles: ["admin", "medical_superintendent", "matron", "accountant", "cashier", "auditor"], section: "Stores" },
+  { href: "/purchase-orders.html", label: "Purchase Orders", icon: "clipboardList", roles: ["admin", "cashier", "accountant", "accounts_clerk", "auditor"], section: "Stores" },
 
   { href: "/pharmacy.html", label: "Pharmacy", icon: "pill", roles: ["admin", "cashier", "accountant", "auditor"], section: "Pharmacy" },
 
@@ -45,6 +46,7 @@ const NAV_ITEMS = [
 
   { href: "/accounts.html", label: "Chart of Accounts", icon: "book", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
   { href: "/charge-items.html", label: "Charge Items", icon: "tag", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
+  { href: "/cash-vouchers.html", label: "Cash Vouchers", icon: "wallet", roles: ["admin", "accountant", "accounts_clerk", "auditor"], section: "Accounting" },
   { href: "/journal.html", label: "Journal Entries", icon: "fileLines", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
   { href: "/assets.html", label: "Asset Register", icon: "box", roles: ["admin", "accountant", "auditor"], section: "Accounting" },
 
