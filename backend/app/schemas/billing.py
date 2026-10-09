@@ -56,6 +56,10 @@ class InvoiceNewPatient(BaseModel):
     national_id: str | None = None
     phone: str | None = None
     address: str | None = None
+    next_of_kin_name: str | None = None
+    next_of_kin_relationship: str | None = None
+    next_of_kin_phone: str | None = None
+    next_of_kin_address: str | None = None
 
 
 class InvoiceCreate(BaseModel):

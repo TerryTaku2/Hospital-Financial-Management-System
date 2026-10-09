@@ -31,7 +31,7 @@
 
         <div id="new-patient-fields" class="grid grid-3" style="display:none">
           <div class="form-row" style="grid-column: span 3">
-            <p class="text-muted" style="margin:0 0 8px 0">No matching patient — fill in the details below and they'll be registered automatically when this invoice is created.</p>
+            <p class="text-muted" style="margin:0 0 8px 0">New patient — fill in what you have below and they'll be registered automatically when this invoice is created. Only first and last name are required.</p>
           </div>
           <div class="form-row"><label>First name</label><input id="new_first_name" /></div>
           <div class="form-row"><label>Last name</label><input id="new_last_name" /></div>
@@ -41,6 +41,16 @@
           </div>
           <div class="form-row"><label>National ID</label><input id="new_national_id" /></div>
           <div class="form-row"><label>Phone</label><input id="new_phone" /></div>
+          <div class="form-row" style="grid-column: span 3"><label>Address</label><input id="new_address" /></div>
+          <div class="form-row"><label>Next of kin name</label><input id="new_nok_name" /></div>
+          <div class="form-row"><label>Next of kin relationship</label>
+            <input id="new_nok_relationship" list="nok-relationships" placeholder="e.g. Spouse, Parent" />
+            <datalist id="nok-relationships">
+              <option value="Spouse"></option><option value="Parent"></option><option value="Child"></option>
+              <option value="Sibling"></option><option value="Guardian"></option><option value="Relative"></option><option value="Friend"></option>
+            </datalist>
+          </div>
+          <div class="form-row"><label>Next of kin phone</label><input id="new_nok_phone" /></div>
         </div>
 
         <h2>Line items</h2>
@@ -108,19 +118,29 @@
           showNewPatientFields(q);
           return;
         }
-        suggestions.innerHTML = matches
-          .map(
-            (p) => `<div class="patient-suggestion" data-id="${p.id}" data-name="${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)}"
-              style="padding:8px; cursor:pointer; border-bottom:1px solid var(--color-border)">
-              ${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)} ${p.national_id ? "· " + escapeHtml(p.national_id) : ""}
-            </div>`
-          )
-          .join("");
+        suggestions.innerHTML =
+          matches
+            .map(
+              (p) => `<div class="patient-suggestion" data-id="${p.id}" data-name="${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)}"
+                style="padding:8px; cursor:pointer; border-bottom:1px solid var(--color-border)">
+                ${escapeHtml(p.first_name)} ${escapeHtml(p.last_name)} ${p.national_id ? "· " + escapeHtml(p.national_id) : ""}
+              </div>`
+            )
+            .join("") +
+          `<div class="new-patient-option" style="padding:8px; cursor:pointer; font-weight:600">
+            + Register “${escapeHtml(q)}” as a new patient
+          </div>`;
         suggestions.style.display = "block";
       }, 250);
     });
 
     suggestions.addEventListener("click", (e) => {
+      if (e.target.closest(".new-patient-option")) {
+        hiddenId.value = "";
+        suggestions.style.display = "none";
+        showNewPatientFields(searchInput.value);
+        return;
+      }
       const row = e.target.closest(".patient-suggestion");
       if (!row) return;
       hiddenId.value = row.dataset.id;
@@ -202,7 +222,25 @@
       const alerts = document.getElementById("alerts");
       alerts.innerHTML = "";
 
-      const patientId = document.getElementById("patient_id").value;
+      let patientId = document.getElementById("patient_id").value;
+      const newFieldsVisible = document.getElementById("new-patient-fields").style.display !== "none";
+      if (!patientId && !newFieldsVisible) {
+        // Nothing picked from the suggestions: reuse an exact name match if there is one,
+        // otherwise register whatever name was typed as a new patient.
+        const typed = document.getElementById("patient_search").value.trim().replace(/\s+/g, " ");
+        const matches = typed ? await api.get(`/patients?q=${encodeURIComponent(typed.split(" ")[0])}`) : [];
+        const exact = matches.filter((p) => `${p.first_name} ${p.last_name}`.toLowerCase() === typed.toLowerCase());
+        if (exact.length === 1) {
+          patientId = String(exact[0].id);
+          document.getElementById("patient_id").value = patientId;
+        } else if (exact.length > 1) {
+          alerts.innerHTML = `<div class="error-banner">More than one patient is named “${escapeHtml(typed)}” — pick the right one from the suggestions list.</div>`;
+          return;
+        } else {
+          showNewPatientFields(typed);
+        }
+      }
+
       let patientFields = {};
       if (patientId) {
         patientFields = { patient_id: Number(patientId) };
@@ -210,7 +248,7 @@
         const firstName = document.getElementById("new_first_name").value.trim();
         const lastName = document.getElementById("new_last_name").value.trim();
         if (!firstName || !lastName) {
-          alerts.innerHTML = `<div class="error-banner">Select a patient from the suggestions list, or enter a first and last name to register a new one.</div>`;
+          alerts.innerHTML = `<div class="error-banner">Enter the patient's first and last name — they'll be registered automatically with this invoice.</div>`;
           return;
         }
         patientFields = {
@@ -221,6 +259,10 @@
             sex: document.getElementById("new_sex").value || null,
             national_id: document.getElementById("new_national_id").value || null,
             phone: document.getElementById("new_phone").value || null,
+            address: document.getElementById("new_address").value || null,
+            next_of_kin_name: document.getElementById("new_nok_name").value || null,
+            next_of_kin_relationship: document.getElementById("new_nok_relationship").value || null,
+            next_of_kin_phone: document.getElementById("new_nok_phone").value || null,
           },
         };
       }
@@ -240,7 +282,10 @@
           medical_aid_provider_id: payerType === "medical_aid" ? Number(document.getElementById("medical_aid_provider_id").value) : null,
           lines,
         });
-        alerts.innerHTML = `<div class="success-banner">Draft invoice ${invoice.invoice_number} created. <a href="/invoice-detail.html?id=${invoice.id}">Open it</a> to finalize.</div>`;
+        const registeredNote = patientFields.new_patient
+          ? ` New patient <a href="/patient-detail.html?id=${invoice.patient_id}">${escapeHtml(patientFields.new_patient.first_name)} ${escapeHtml(patientFields.new_patient.last_name)}</a> was registered.`
+          : "";
+        alerts.innerHTML = `<div class="success-banner">Draft invoice ${invoice.invoice_number} created. <a href="/invoice-detail.html?id=${invoice.id}">Open it</a> to finalize.${registeredNote}</div>`;
         if (patientFields.new_patient) {
           // Reuse the newly-registered patient instead of re-registering them on the next submit.
           document.getElementById("patient_id").value = invoice.patient_id;
