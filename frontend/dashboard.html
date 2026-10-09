@@ -39,6 +39,24 @@
         </div>
       </div>
 
+      <div class="grid grid-3">
+        <div class="card stat-tile bad">
+          <div class="label">Outstanding Payables</div>
+          <div class="value" id="ap-total">—</div>
+          <div class="sub"><a href="/ap-aging.html">Owed to suppliers</a></div>
+        </div>
+        <div class="card stat-tile warn">
+          <div class="label">Payables over 60 days</div>
+          <div class="value" id="ap-overdue">—</div>
+          <div class="sub" id="ap-supplier-count">&nbsp;</div>
+        </div>
+        <div class="card stat-tile">
+          <div class="label">Patients checked in</div>
+          <div class="value" id="checked-in-count">—</div>
+          <div class="sub" id="checked-in-breakdown"><a href="/patients.html">View patients</a></div>
+        </div>
+      </div>
+
       <div class="card">
         <h2>Quick actions</h2>
         <a class="btn" href="/billing.html">New Invoice</a>
@@ -62,6 +80,19 @@
           <h2>AR aging</h2>
           <p class="card-subtitle">Outstanding balances by age</p>
           <div id="chart-ar-aging"></div>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card chart-card">
+          <h2>Payables aging</h2>
+          <p class="card-subtitle">Amounts owed to suppliers by age</p>
+          <div id="chart-ap-aging"></div>
+        </div>
+        <div class="card chart-card">
+          <h2>Top suppliers owed</h2>
+          <p class="card-subtitle">Largest outstanding supplier balances</p>
+          <div id="chart-ap-suppliers"></div>
         </div>
       </div>
     </div>
@@ -107,6 +138,47 @@
         buckets[3].value += Number(row.bucket_90_plus);
       }
       renderBarChart(document.getElementById("chart-ar-aging"), buckets, { colorSteps: buckets.map((b) => b.color) });
+    } catch (err) {
+      console.error(err);
+    }
+    try {
+      const ap = await api.get("/reports/ap-aging");
+      document.getElementById("ap-total").textContent = formatMoney(ap.grand_total, "");
+
+      const apBuckets = [
+        { label: "0–30 days", value: 0, color: "#3b5a80" },
+        { label: "31–60 days", value: 0, color: "#2563eb" },
+        { label: "61–90 days", value: 0, color: "#60a5fa" },
+        { label: "90+ days", value: 0, color: "#93c5fd" },
+      ];
+      for (const row of ap.rows) {
+        apBuckets[0].value += Number(row.bucket_0_30);
+        apBuckets[1].value += Number(row.bucket_31_60);
+        apBuckets[2].value += Number(row.bucket_61_90);
+        apBuckets[3].value += Number(row.bucket_90_plus);
+      }
+      document.getElementById("ap-overdue").textContent = formatMoney(apBuckets[2].value + apBuckets[3].value, "");
+      document.getElementById("ap-supplier-count").textContent =
+        `${ap.rows.length} supplier${ap.rows.length === 1 ? "" : "s"} with open balances`;
+      renderBarChart(document.getElementById("chart-ap-aging"), apBuckets, { colorSteps: apBuckets.map((b) => b.color) });
+
+      const topSuppliers = ap.rows
+        .map((row) => ({
+          label: row.creditor_name.length > 18 ? row.creditor_name.slice(0, 17) + "…" : row.creditor_name,
+          value: Number(row.total_outstanding),
+        }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+      renderBarChart(document.getElementById("chart-ap-suppliers"), topSuppliers);
+    } catch (err) {
+      console.error(err);
+    }
+    try {
+      const checkedIn = await api.get("/encounters?status=open");
+      const ipd = checkedIn.filter((e) => e.type === "ipd").length;
+      document.getElementById("checked-in-count").textContent = checkedIn.length;
+      document.getElementById("checked-in-breakdown").innerHTML =
+        `${checkedIn.length - ipd} OPD · ${ipd} IPD · <a href="/patients.html">View patients</a>`;
     } catch (err) {
       console.error(err);
     }

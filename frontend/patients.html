@@ -21,6 +21,17 @@
         <div class="form-row"><label>National ID</label><input id="national_id" /></div>
         <div class="form-row"><label>Phone</label><input id="phone" /></div>
         <div class="form-row" style="grid-column: span 3"><label>Address</label><input id="address" /></div>
+        <div class="form-section-title" style="grid-column: span 3"><strong>Next of kin</strong></div>
+        <div class="form-row"><label>Full name</label><input id="nok_name" /></div>
+        <div class="form-row"><label>Relationship</label>
+          <input id="nok_relationship" list="nok-relationships" placeholder="e.g. Spouse, Parent" />
+          <datalist id="nok-relationships">
+            <option value="Spouse"></option><option value="Parent"></option><option value="Child"></option>
+            <option value="Sibling"></option><option value="Guardian"></option><option value="Relative"></option><option value="Friend"></option>
+          </datalist>
+        </div>
+        <div class="form-row"><label>Phone</label><input id="nok_phone" /></div>
+        <div class="form-row" style="grid-column: span 3"><label>Address</label><input id="nok_address" /></div>
         <div><button class="btn" type="submit">Register</button></div>
       </form>
     </div>
@@ -32,7 +43,7 @@
       </div>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Name</th><th>DOB</th><th>National ID</th><th>Phone</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>DOB</th><th>National ID</th><th>Phone</th><th>Next of kin</th><th>Status</th><th></th></tr></thead>
           <tbody id="patients-body"></tbody>
         </table>
       </div>
@@ -48,7 +59,11 @@
   let currentUser = null;
 
   async function loadPatients(q) {
-    const list = await api.get("/patients" + (q ? `?q=${encodeURIComponent(q)}` : ""));
+    const [list, openEncounters] = await Promise.all([
+      api.get("/patients" + (q ? `?q=${encodeURIComponent(q)}` : "")),
+      api.get("/encounters?status=open"),
+    ]);
+    const checkedIn = new Set(openEncounters.map((e) => e.patient_id));
     document.getElementById("patients-body").innerHTML = list
       .map(
         (p) => `<tr>
@@ -56,6 +71,10 @@
           <td>${p.date_of_birth || "—"}</td>
           <td>${escapeHtml(p.national_id || "—")}</td>
           <td>${escapeHtml(p.phone || "—")}</td>
+          <td>${p.next_of_kin_name
+            ? `${escapeHtml(p.next_of_kin_name)}${p.next_of_kin_relationship ? ` (${escapeHtml(p.next_of_kin_relationship)})` : ""}<br><span class="text-muted">${escapeHtml(p.next_of_kin_phone || "")}</span>`
+            : "—"}</td>
+          <td>${statusBadge(checkedIn.has(p.id) ? "checked_in" : "checked_out")}</td>
           <td><a href="/patient-detail.html?id=${p.id}">View</a></td>
         </tr>`
       )
@@ -83,6 +102,10 @@
           national_id: document.getElementById("national_id").value || null,
           phone: document.getElementById("phone").value || null,
           address: document.getElementById("address").value || null,
+          next_of_kin_name: document.getElementById("nok_name").value || null,
+          next_of_kin_relationship: document.getElementById("nok_relationship").value || null,
+          next_of_kin_phone: document.getElementById("nok_phone").value || null,
+          next_of_kin_address: document.getElementById("nok_address").value || null,
         });
         e.target.reset();
         await loadPatients();

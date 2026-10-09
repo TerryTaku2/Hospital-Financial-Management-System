@@ -8,7 +8,7 @@ from app.dependencies import require_role, verify_csrf
 from app.models.enums import RoleEnum
 from app.models.insurance import PatientCover
 from app.models.patient import Patient
-from app.schemas.patient import PatientCoverCreate, PatientCoverOut, PatientCreate, PatientOut
+from app.schemas.patient import PatientCoverCreate, PatientCoverOut, PatientCreate, PatientOut, PatientUpdate
 
 router = APIRouter(prefix="/api/patients", tags=["patients"], dependencies=[Depends(verify_csrf)])
 
@@ -52,6 +52,24 @@ async def create_patient(
     scope.check_write(patient_in.branch_id)
     patient = Patient(**patient_in.model_dump())
     db.add(patient)
+    await db.commit()
+    await db.refresh(patient)
+    return patient
+
+
+@router.patch("/{patient_id}", response_model=PatientOut, dependencies=[Depends(CAN_REGISTER_PATIENTS)])
+async def update_patient(
+    patient_id: int,
+    patient_in: PatientUpdate,
+    db: AsyncSession = Depends(get_db),
+    scope: BranchScope = Depends(get_branch_scope),
+) -> Patient:
+    patient = await db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Patient not found")
+    scope.check_write(patient.branch_id)
+    for field, value in patient_in.model_dump(exclude_unset=True).items():
+        setattr(patient, field, value)
     await db.commit()
     await db.refresh(patient)
     return patient

@@ -19,3 +19,7 @@ class Patient(Base, TimestampMixin):
     national_id: Mapped[str | None] = mapped_column(String(50))
     phone: Mapped[str | None] = mapped_column(String(30))
     address: Mapped[str | None] = mapped_column(String(300))
+    next_of_kin_name: Mapped[str | None] = mapped_column(String(200))
+    next_of_kin_relationship: Mapped[str | None] = mapped_column(String(50))
+    next_of_kin_phone: Mapped[str | None] = mapped_column(String(30))
+    next_of_kin_address: Mapped[str | None] = mapped_column(String(300))

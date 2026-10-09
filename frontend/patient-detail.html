@@ -8,8 +8,35 @@
     <div id="alerts"></div>
 
     <div class="card">
-      <h2 id="patient-name">Loading…</h2>
+      <div class="flex-between">
+        <h2 id="patient-name">Loading…</h2>
+        <span id="patient-checkin-status"></span>
+      </div>
       <p class="text-muted" id="patient-meta"></p>
+    </div>
+
+    <div class="card">
+      <div class="flex-between">
+        <h2>Next of kin</h2>
+        <button type="button" class="btn secondary" id="nok-edit-btn" style="display:none">Edit</button>
+      </div>
+      <div id="nok-view"></div>
+      <form id="nok-form" class="grid grid-3" style="display:none">
+        <div class="form-row"><label>Full name</label><input id="nok_name" /></div>
+        <div class="form-row"><label>Relationship</label>
+          <input id="nok_relationship" list="nok-relationships" placeholder="e.g. Spouse, Parent" />
+          <datalist id="nok-relationships">
+            <option value="Spouse"></option><option value="Parent"></option><option value="Child"></option>
+            <option value="Sibling"></option><option value="Guardian"></option><option value="Relative"></option><option value="Friend"></option>
+          </datalist>
+        </div>
+        <div class="form-row"><label>Phone</label><input id="nok_phone" /></div>
+        <div class="form-row" style="grid-column: span 3"><label>Address</label><input id="nok_address" /></div>
+        <div>
+          <button class="btn" type="submit">Save</button>
+          <button class="btn secondary" type="button" id="nok-cancel-btn">Cancel</button>
+        </div>
+      </form>
     </div>
 
     <div class="grid grid-3">
@@ -29,19 +56,20 @@
 
     <div class="card">
       <div class="flex-between">
-        <h2>Encounters</h2>
+        <h2>Check-in / Check-out</h2>
       </div>
+      <p class="text-muted" id="checked-in-note" style="display:none"></p>
       <form id="encounter-form" class="grid grid-3">
         <div class="form-row"><label>Type</label>
-          <select id="enc_type"><option value="opd">OPD</option><option value="ipd">IPD</option></select>
+          <select id="enc_type"><option value="opd">OPD (outpatient)</option><option value="ipd">IPD (admission)</option></select>
         </div>
         <div class="form-row"><label>Attending doctor</label><input id="enc_doctor" /></div>
-        <div class="form-row"><label>Admission date/time</label><input type="datetime-local" id="enc_admission" required /></div>
-        <div><button class="btn" type="submit">Open encounter</button></div>
+        <div class="form-row"><label>Check-in date/time</label><input type="datetime-local" id="enc_admission" required /></div>
+        <div><button class="btn" type="submit">Check in patient</button></div>
       </form>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>ID</th><th>Type</th><th>Doctor</th><th>Admitted</th><th>Status</th></tr></thead>
+          <thead><tr><th>ID</th><th>Type</th><th>Doctor</th><th>Checked in</th><th>Checked out</th><th>Length of stay</th><th>Status</th><th></th></tr></thead>
           <tbody id="encounters-body"></tbody>
         </table>
       </div>
@@ -131,6 +159,52 @@
   const patientId = new URLSearchParams(window.location.search).get("id");
   let currentUser = null;
   let invoicesCache = [];
+  let currentPatient = null;
+  let canEditPatient = false;
+  let canManageEncounters = false;
+
+  function toLocalInputValue(date) {
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  }
+
+  function formatStay(checkIn, checkOut) {
+    const ms = (checkOut ? new Date(checkOut) : new Date()) - new Date(checkIn);
+    if (ms < 0) return "—";
+    const totalMinutes = Math.floor(ms / 60000);
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    const text = days > 0 ? `${days}d ${hours}h` : hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+    return checkOut ? text : `${text} (ongoing)`;
+  }
+
+  function renderNextOfKin(patient) {
+    currentPatient = patient;
+    const view = document.getElementById("nok-view");
+    if (!patient.next_of_kin_name && !patient.next_of_kin_phone) {
+      view.innerHTML = `<p class="text-muted">No next of kin recorded.</p>`;
+      return;
+    }
+    view.innerHTML = `<div class="grid grid-3">
+      <div><div class="text-muted">Name</div><div>${escapeHtml(patient.next_of_kin_name || "—")}</div></div>
+      <div><div class="text-muted">Relationship</div><div>${escapeHtml(patient.next_of_kin_relationship || "—")}</div></div>
+      <div><div class="text-muted">Phone</div><div>${escapeHtml(patient.next_of_kin_phone || "—")}</div></div>
+      <div style="grid-column: span 3"><div class="text-muted">Address</div><div>${escapeHtml(patient.next_of_kin_address || "—")}</div></div>
+    </div>`;
+  }
+
+  function showNokForm(show) {
+    document.getElementById("nok-form").style.display = show ? "grid" : "none";
+    document.getElementById("nok-view").style.display = show ? "none" : "block";
+    document.getElementById("nok-edit-btn").style.display = show || !canEditPatient ? "none" : "inline-block";
+    if (show) {
+      document.getElementById("nok_name").value = currentPatient.next_of_kin_name || "";
+      document.getElementById("nok_relationship").value = currentPatient.next_of_kin_relationship || "";
+      document.getElementById("nok_phone").value = currentPatient.next_of_kin_phone || "";
+      document.getElementById("nok_address").value = currentPatient.next_of_kin_address || "";
+    }
+  }
 
   function addInvoiceLineRow() {
     const container = document.getElementById("inv-lines-container");
@@ -165,13 +239,30 @@
     document.getElementById("patient-meta").textContent =
       `DOB: ${patient.date_of_birth || "—"} · National ID: ${patient.national_id || "—"} · Phone: ${patient.phone || "—"}`;
 
+    renderNextOfKin(patient);
+
     const encounters = await api.get(`/encounters?patient_id=${patientId}`);
+    const openEncounter = encounters.find((e) => e.status === "open");
+    document.getElementById("patient-checkin-status").innerHTML = statusBadge(openEncounter ? "checked_in" : "checked_out");
+    const note = document.getElementById("checked-in-note");
+    note.style.display = openEncounter ? "block" : "none";
+    note.textContent = openEncounter
+      ? `Checked in (${openEncounter.type.toUpperCase()}) since ${new Date(openEncounter.admission_date).toLocaleString()}. Check the patient out before starting a new visit.`
+      : "";
+    document.getElementById("encounter-form").style.display = canManageEncounters && !openEncounter ? "grid" : "none";
+
     document.getElementById("encounters-body").innerHTML = encounters
       .map(
         (e) => `<tr><td>${e.id}</td><td>${e.type.toUpperCase()}</td><td>${escapeHtml(e.attending_doctor_name || "—")}</td>
-          <td>${new Date(e.admission_date).toLocaleString()}</td><td>${statusBadge(e.status)}</td></tr>`
+          <td>${new Date(e.admission_date).toLocaleString()}</td>
+          <td>${e.discharge_date ? new Date(e.discharge_date).toLocaleString() : "—"}</td>
+          <td>${formatStay(e.admission_date, e.discharge_date)}</td>
+          <td>${statusBadge(e.status === "open" ? "checked_in" : "checked_out")}</td>
+          <td>${e.status === "open" && canManageEncounters
+            ? `<button type="button" class="btn secondary checkout-btn" data-id="${e.id}">Check out</button>`
+            : ""}</td></tr>`
       )
-      .join("");
+      .join("") || `<tr><td colspan="8" class="text-muted">No visits recorded yet.</td></tr>`;
     document.getElementById("inv_encounter_id").innerHTML =
       `<option value="">— none —</option>` +
       encounters.map((e) => `<option value="${e.id}">#${e.id} — ${e.type.toUpperCase()} (${new Date(e.admission_date).toLocaleDateString()})</option>`).join("");
@@ -245,7 +336,10 @@
     if (!currentUser) return;
 
     const canBill = ["admin", "cashier", "accountant"].includes(currentUser.role);
+    canEditPatient = canBill;
+    canManageEncounters = ["admin", "cashier", "accountant", "clinician"].includes(currentUser.role);
     document.getElementById("new-invoice-card").style.display = canBill ? "block" : "none";
+    document.getElementById("enc_admission").value = toLocalInputValue(new Date());
 
     if (canBill) {
       const providers = await api.get("/medical-aid-providers");
@@ -285,6 +379,45 @@
     }
 
     await loadAll();
+    showNokForm(false);
+
+    document.getElementById("nok-edit-btn").addEventListener("click", () => showNokForm(true));
+    document.getElementById("nok-cancel-btn").addEventListener("click", () => showNokForm(false));
+    document.getElementById("nok-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      try {
+        const patient = await api.patch(`/patients/${patientId}`, {
+          next_of_kin_name: document.getElementById("nok_name").value || null,
+          next_of_kin_relationship: document.getElementById("nok_relationship").value || null,
+          next_of_kin_phone: document.getElementById("nok_phone").value || null,
+          next_of_kin_address: document.getElementById("nok_address").value || null,
+        });
+        renderNextOfKin(patient);
+        showNokForm(false);
+        alerts.innerHTML = `<div class="success-banner">Next of kin updated.</div>`;
+      } catch (err) {
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not update next of kin")}</div>`;
+      }
+    });
+
+    document.getElementById("encounters-body").addEventListener("click", async (e) => {
+      const btn = e.target.closest(".checkout-btn");
+      if (!btn) return;
+      if (!confirm("Check this patient out now?")) return;
+      const alerts = document.getElementById("alerts");
+      alerts.innerHTML = "";
+      btn.disabled = true;
+      try {
+        await api.post(`/encounters/${btn.dataset.id}/close`, { discharge_date: new Date().toISOString() });
+        await loadAll();
+        alerts.innerHTML = `<div class="success-banner">Patient checked out.</div>`;
+      } catch (err) {
+        btn.disabled = false;
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not check out patient")}</div>`;
+      }
+    });
 
     document.getElementById("encounter-form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -299,10 +432,11 @@
           admission_date: new Date(document.getElementById("enc_admission").value).toISOString(),
         });
         e.target.reset();
+        document.getElementById("enc_admission").value = toLocalInputValue(new Date());
         await loadAll();
-        alerts.innerHTML = `<div class="success-banner">Encounter opened.</div>`;
+        alerts.innerHTML = `<div class="success-banner">Patient checked in.</div>`;
       } catch (err) {
-        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not open encounter")}</div>`;
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Could not check in patient")}</div>`;
       }
     });
   })();
