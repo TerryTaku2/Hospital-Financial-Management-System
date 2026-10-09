@@ -49,6 +49,8 @@ class PaymentMethod(str, enum.Enum):
     CASH = "cash"
     CARD = "card"
     EFT = "eft"
+    ECOCASH = "ecocash"
+    BANK = "bank"
     MEDICAL_AID = "medical_aid"
 
 

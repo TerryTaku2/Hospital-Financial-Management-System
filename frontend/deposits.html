@@ -10,13 +10,13 @@
     <div class="card">
       <h2>Take deposit</h2>
       <form id="deposit-form" class="grid grid-3">
-        <div class="form-row"><label>Patient ID</label><input type="number" id="dep_patient_id" required /></div>
+        <div class="form-row"><label>Patient</label><input type="text" id="dep_patient" placeholder="Type patient name…" required /></div>
         <div class="form-row"><label>Currency</label>
           <select id="dep_currency"><option value="USD">USD</option><option value="ZWG">ZWG</option></select>
         </div>
         <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="dep_amount" required /></div>
         <div class="form-row"><label>Method</label>
-          <select id="dep_method"><option value="cash">Cash</option><option value="card">Card</option><option value="eft">EFT</option></select>
+          <select id="dep_method"><option value="cash">Cash</option><option value="ecocash">EcoCash</option><option value="bank">Bank</option></select>
         </div>
         <div><button class="btn" type="submit">Take deposit</button></div>
       </form>
@@ -25,8 +25,13 @@
     <div class="card">
       <h2>Apply deposit to invoice</h2>
       <form id="apply-form" class="grid grid-3">
-        <div class="form-row"><label>Deposit ID</label><input type="number" id="apply_deposit_id" required /></div>
-        <div class="form-row"><label>Invoice ID</label><input type="number" id="apply_invoice_id" required /></div>
+        <div class="form-row"><label>Patient</label><input type="text" id="apply_patient" placeholder="Type patient name…" required /></div>
+        <div class="form-row"><label>Deposit</label>
+          <select id="apply_deposit_id" required disabled><option value="">Select a patient first</option></select>
+        </div>
+        <div class="form-row"><label>Invoice</label>
+          <select id="apply_invoice_id" required disabled><option value="">Select a patient first</option></select>
+        </div>
         <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="apply_amount" required /></div>
         <div><button class="btn secondary" type="submit">Apply</button></div>
       </form>
@@ -35,7 +40,10 @@
     <div class="card">
       <h2>Refund deposit</h2>
       <form id="refund-form" class="grid grid-3">
-        <div class="form-row"><label>Deposit ID</label><input type="number" id="refund_deposit_id" required /></div>
+        <div class="form-row"><label>Patient</label><input type="text" id="refund_patient" placeholder="Type patient name…" required /></div>
+        <div class="form-row"><label>Deposit</label>
+          <select id="refund_deposit_id" required disabled><option value="">Select a patient first</option></select>
+        </div>
         <div class="form-row"><label>Amount</label><input type="number" step="0.01" min="0.01" id="refund_amount" required /></div>
         <div class="form-row"><label>Reason</label><input id="refund_reason" required /></div>
         <div><button class="btn secondary" type="submit">Refund</button></div>
@@ -46,7 +54,7 @@
       <h2>Deposits</h2>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>ID</th><th>Patient</th><th>Currency</th><th>Amount</th><th>Applied</th><th>Refunded</th><th>Status</th></tr></thead>
+          <thead><tr><th>ID</th><th>Patient</th><th>Currency</th><th>Amount</th><th>Applied</th><th>Refunded</th><th>Available</th><th>Status</th></tr></thead>
           <tbody id="deposits-body"></tbody>
         </table>
       </div>
@@ -58,34 +66,79 @@
 <script src="/js/auth.js"></script>
 <script src="/js/currency.js"></script>
 <script src="/js/nav.js"></script>
+<script src="/js/patient-picker.js"></script>
 <script>
   let currentUser = null;
+  let applyDeposits = [];
+  let applyInvoices = [];
+  let refundDeposits = [];
 
-  async function loadDeposits() {
-    const deposits = await api.get("/deposits");
-    document.getElementById("deposits-body").innerHTML = deposits
-      .map(
-        (d) => `<tr><td>${d.id}</td><td><a href="/patient-detail.html?id=${d.patient_id}">#${d.patient_id}</a></td>
-          <td>${d.currency_code}</td><td>${formatMoney(d.amount, "")}</td><td>${formatMoney(d.amount_applied, "")}</td>
-          <td>${formatMoney(d.amount_refunded, "")}</td><td>${statusBadge(d.status)}</td></tr>`
-      )
-      .join("");
+  function depositAvailable(d) {
+    return Number(d.amount) - Number(d.amount_applied) - Number(d.amount_refunded);
   }
 
-  function bindForm(formId, handler) {
+  function invoiceBalance(i) {
+    return Number(i.total) - Number(i.amount_paid);
+  }
+
+  async function availableDepositsFor(patientId) {
+    const deposits = await api.get(`/deposits?patient_id=${patientId}`);
+    return deposits.filter((d) => ["held", "partially_applied"].includes(d.status) && depositAvailable(d) > 0);
+  }
+
+  function fillSelect(select, items, label, emptyText) {
+    select.disabled = items.length === 0;
+    select.innerHTML = items.length
+      ? items.map((item) => `<option value="${item.id}">${label(item)}</option>`).join("")
+      : `<option value="">${emptyText}</option>`;
+  }
+
+  function resetSelect(select) {
+    select.disabled = true;
+    select.innerHTML = `<option value="">Select a patient first</option>`;
+  }
+
+  function suggestApplyAmount() {
+    const deposit = applyDeposits.find((d) => String(d.id) === document.getElementById("apply_deposit_id").value);
+    const invoice = applyInvoices.find((i) => String(i.id) === document.getElementById("apply_invoice_id").value);
+    if (deposit && invoice) {
+      document.getElementById("apply_amount").value = Math.min(depositAvailable(deposit), invoiceBalance(invoice)).toFixed(2);
+    }
+  }
+
+  async function loadDeposits() {
+    const [deposits, patients] = await Promise.all([api.get("/deposits"), api.get("/patients")]);
+    const names = Object.fromEntries(patients.map((p) => [p.id, `${p.first_name} ${p.last_name}`]));
+    document.getElementById("deposits-body").innerHTML = deposits
+      .map(
+        (d) => `<tr><td>${d.id}</td>
+          <td><a href="/patient-detail.html?id=${d.patient_id}">${escapeHtml(names[d.patient_id] || "#" + d.patient_id)}</a></td>
+          <td>${d.currency_code}</td><td>${formatMoney(d.amount, "")}</td><td>${formatMoney(d.amount_applied, "")}</td>
+          <td>${formatMoney(d.amount_refunded, "")}</td><td>${formatMoney(depositAvailable(d), "")}</td><td>${statusBadge(d.status)}</td></tr>`
+      )
+      .join("") || `<tr><td colspan="8" class="text-muted">No deposits recorded yet.</td></tr>`;
+  }
+
+  function bindForm(formId, handler, onReset) {
     document.getElementById(formId).addEventListener("submit", async (e) => {
       e.preventDefault();
       const alerts = document.getElementById("alerts");
       alerts.innerHTML = "";
       try {
-        await handler();
+        const message = await handler();
         e.target.reset();
+        if (onReset) onReset();
         await loadDeposits();
-        alerts.innerHTML = `<div class="success-banner">Done.</div>`;
+        alerts.innerHTML = `<div class="success-banner">${escapeHtml(message || "Done.")}</div>`;
       } catch (err) {
-        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || "Request failed")}</div>`;
+        alerts.innerHTML = `<div class="error-banner">${escapeHtml(err.detail || err.message || "Request failed")}</div>`;
       }
     });
+  }
+
+  function requirePatient(picker) {
+    if (!picker.selected) throw new Error("Pick the patient from the suggestions list.");
+    return picker.selected;
   }
 
   (async () => {
@@ -93,40 +146,109 @@
     if (!currentUser) return;
     await loadDeposits();
 
-    bindForm("deposit-form", () =>
-      api.post(
-        "/deposits",
-        {
-          branch_id: currentUser.branch_id,
-          patient_id: Number(document.getElementById("dep_patient_id").value),
-          currency_code: document.getElementById("dep_currency").value,
-          amount: Number(document.getElementById("dep_amount").value),
-          method: document.getElementById("dep_method").value,
-        },
-        { "Idempotency-Key": newIdempotencyKey() }
-      )
+    // Take deposit
+    const depositPicker = attachPatientPicker(document.getElementById("dep_patient"));
+    bindForm(
+      "deposit-form",
+      async () => {
+        const patient = requirePatient(depositPicker);
+        await api.post(
+          "/deposits",
+          {
+            branch_id: currentUser.branch_id,
+            patient_id: patient.id,
+            currency_code: document.getElementById("dep_currency").value,
+            amount: Number(document.getElementById("dep_amount").value),
+            method: document.getElementById("dep_method").value,
+          },
+          { "Idempotency-Key": newIdempotencyKey() }
+        );
+        return `Deposit taken for ${patient.first_name} ${patient.last_name}.`;
+      },
+      () => depositPicker.clear()
     );
 
-    bindForm("apply-form", () =>
-      api.post(`/deposits/${document.getElementById("apply_deposit_id").value}/apply`, {
-        invoice_id: Number(document.getElementById("apply_invoice_id").value),
-        amount: Number(document.getElementById("apply_amount").value),
-      })
-    );
-
-    bindForm("refund-form", async () => {
-      const depositId = document.getElementById("refund_deposit_id").value;
-      const deposit = await api.get(`/deposits/${depositId}`);
-      return api.post(
-        `/deposits/${depositId}/refund`,
-        {
-          branch_id: currentUser.branch_id,
-          currency_code: deposit.currency_code,
-          amount: Number(document.getElementById("refund_amount").value),
-          reason: document.getElementById("refund_reason").value,
-        },
-        { "Idempotency-Key": newIdempotencyKey() }
-      );
+    // Apply deposit to invoice
+    const applyDepositSelect = document.getElementById("apply_deposit_id");
+    const applyInvoiceSelect = document.getElementById("apply_invoice_id");
+    const applyPicker = attachPatientPicker(document.getElementById("apply_patient"), async (patient) => {
+      applyDeposits = [];
+      applyInvoices = [];
+      if (!patient) {
+        resetSelect(applyDepositSelect);
+        resetSelect(applyInvoiceSelect);
+        return;
+      }
+      const [deposits, invoices] = await Promise.all([
+        availableDepositsFor(patient.id),
+        api.get(`/invoices?patient_id=${patient.id}`),
+      ]);
+      applyDeposits = deposits;
+      applyInvoices = invoices.filter((i) => ["finalized", "partially_paid"].includes(i.status) && invoiceBalance(i) > 0);
+      fillSelect(applyDepositSelect, applyDeposits,
+        (d) => `#${d.id} — ${formatMoney(depositAvailable(d), d.currency_code)} available`, "No deposits available");
+      fillSelect(applyInvoiceSelect, applyInvoices,
+        (i) => `${i.invoice_number} — ${formatMoney(invoiceBalance(i), i.currency_code)} due`, "No unpaid finalized invoices");
+      suggestApplyAmount();
     });
+    applyDepositSelect.addEventListener("change", suggestApplyAmount);
+    applyInvoiceSelect.addEventListener("change", suggestApplyAmount);
+    bindForm(
+      "apply-form",
+      async () => {
+        requirePatient(applyPicker);
+        await api.post(`/deposits/${applyDepositSelect.value}/apply`, {
+          invoice_id: Number(applyInvoiceSelect.value),
+          amount: Number(document.getElementById("apply_amount").value),
+        });
+        return "Deposit applied to invoice.";
+      },
+      () => {
+        applyPicker.clear();
+        resetSelect(applyDepositSelect);
+        resetSelect(applyInvoiceSelect);
+      }
+    );
+
+    // Refund deposit
+    const refundDepositSelect = document.getElementById("refund_deposit_id");
+    const refundPicker = attachPatientPicker(document.getElementById("refund_patient"), async (patient) => {
+      refundDeposits = [];
+      if (!patient) {
+        resetSelect(refundDepositSelect);
+        return;
+      }
+      refundDeposits = await availableDepositsFor(patient.id);
+      fillSelect(refundDepositSelect, refundDeposits,
+        (d) => `#${d.id} — ${formatMoney(depositAvailable(d), d.currency_code)} available`, "No deposits available");
+      const first = refundDeposits[0];
+      if (first) document.getElementById("refund_amount").value = depositAvailable(first).toFixed(2);
+    });
+    refundDepositSelect.addEventListener("change", () => {
+      const deposit = refundDeposits.find((d) => String(d.id) === refundDepositSelect.value);
+      if (deposit) document.getElementById("refund_amount").value = depositAvailable(deposit).toFixed(2);
+    });
+    bindForm(
+      "refund-form",
+      async () => {
+        requirePatient(refundPicker);
+        const deposit = refundDeposits.find((d) => String(d.id) === refundDepositSelect.value);
+        await api.post(
+          `/deposits/${deposit.id}/refund`,
+          {
+            branch_id: currentUser.branch_id,
+            currency_code: deposit.currency_code,
+            amount: Number(document.getElementById("refund_amount").value),
+            reason: document.getElementById("refund_reason").value,
+          },
+          { "Idempotency-Key": newIdempotencyKey() }
+        );
+        return "Deposit refunded.";
+      },
+      () => {
+        refundPicker.clear();
+        resetSelect(refundDepositSelect);
+      }
+    );
   })();
 </script>

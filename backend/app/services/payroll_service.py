@@ -13,7 +13,9 @@ from app.schemas.payroll import PayrollRunCreate
 from app.services import account_lookup, coa_codes
 from app.services.posting_service import LineInput, PostingError, post_journal_entry
 
-PAYROLL_PAYMENT_METHODS = (PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.EFT)
+PAYROLL_PAYMENT_METHODS = (
+    PaymentMethod.CASH, PaymentMethod.CARD, PaymentMethod.EFT, PaymentMethod.ECOCASH, PaymentMethod.BANK
+)
 
 
 async def _recompute_totals(db: AsyncSession, run: PayrollRun) -> None:
